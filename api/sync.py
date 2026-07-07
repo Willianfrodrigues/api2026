@@ -104,7 +104,7 @@ def run_transfer(tr, slot):
     status = "ok" if all(r["status"]=="ok" for r in table_results) else "partial"
     errors = [r.get("error","") for r in table_results if r.get("status")=="error"]
     error_msg = " | ".join(errors) if errors else None
-    update_transfer_run(tid, status, total_rows, error_msg)
+    update_transfer_run(tid, status, total_rows)
     return {"transfer_id":tid,"status":status,"total_rows":total_rows,
             "tables":table_results,"duration_ms":int((time.time()-t0)*1000)}
 
