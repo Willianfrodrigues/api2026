@@ -705,17 +705,11 @@ select.fi { cursor: pointer; }
       <button class="btn btn-ghost btn-sm" onclick="closeMo('mo-table')">✕</button>
     </div>
     <div class="modal-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:16px;align-items:end">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;align-items:end">
         <div><label class="form-label">Table name</label><input class="fi" type="text" id="tbl-name" placeholder="ex: New Facebook Ads Table" oninput="autoFillBQ()"></div>
-        <div><label class="form-label">BigQuery table name</label><input class="fi" type="text" id="tbl-bq" placeholder="FBADS_NEW_TABLE"></div>
+        <div><label class="form-label">BigQuery table name (gerado automaticamente)</label><input class="fi" type="text" id="tbl-bq" placeholder="FBADS_NEW_TABLE" style="opacity:.6" readonly></div>
         <div><label class="form-label">Plataforma</label><input class="fi" type="text" id="tbl-plat-disp" disabled style="opacity:.5"></div>
-        <div><label class="form-label">Granularidade</label>
-          <select class="fi" id="tbl-breakdown">
-            <option value="campaign">Por campanha</option>
-            <option value="adgroup">Por conjunto / adgroup</option>
-            <option value="ad">Por anúncio</option>
-          </select>
-        </div>
+        <div style="display:none"><select class="fi" id="tbl-breakdown"><option value="campaign">campaign</option><option value="adgroup">adgroup</option><option value="ad">ad</option></select></div>
       </div>
 
       <div class="conflict-box" id="conflict-box">⚠ Dimensões incompatíveis: <strong>audience + region</strong> não podem ser combinadas na mesma query. Crie uma segunda tabela separada para esses campos.</div>
