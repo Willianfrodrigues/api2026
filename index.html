@@ -679,7 +679,15 @@ select.fi { cursor: pointer; }
       <button class="btn btn-ghost btn-sm" onclick="closeMo('mo-group')">✕</button>
     </div>
     <div class="modal-body">
-      <div class="form-row"><label class="form-label">Group name</label><input class="fi" type="text" placeholder="ex: Custom table group for Facebook Ads"></div>
+      <div class="form-row"><label class="form-label">Group name</label><input class="fi" id="g-name" type="text" placeholder="ex: Custom table group for Facebook Ads"></div>
+      <div class="form-row"><label class="form-label">Plataforma</label>
+        <select class="fi" id="g-plat">
+          <option value="meta">📘 Meta Ads</option>
+          <option value="tiktok">🎵 TikTok Ads</option>
+          <option value="dv360">🎯 Google DV360</option>
+          <option value="kwai">🎬 Kwai</option>
+        </select>
+      </div>
       <div class="form-row"><label class="form-label">Plataforma</label><select class="fi"><option>📘 Meta Ads</option><option>🎯 Google DV360</option><option>🎵 TikTok Ads</option><option>🎬 Kwai</option></select></div>
     </div>
     <div class="modal-footer">
