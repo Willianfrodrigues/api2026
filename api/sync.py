@@ -123,8 +123,16 @@ def fetch_platform(platform, token, accounts, tbl, date_start, date_end):
 def fetch_meta(token, accounts, tbl, date_start, date_end):
     dims = tbl.get("dimensions",[])
     mets = tbl.get("metrics",[])
-    breakdown = tbl.get("breakdown","campaign")
-    level = {"campaign":"campaign","adgroup":"adset","ad":"ad"}.get(breakdown,"campaign")
+
+    # Auto-detecta level baseado nas dimensões selecionadas
+    AD_DIMS    = {"ad_id","ad_name","ad_creative_id","ad_creative_name","creative_id","creative_name"}
+    ADSET_DIMS = {"adset_id","adset_name"}
+    if any(d in AD_DIMS for d in dims):
+        level = "ad"
+    elif any(d in ADSET_DIMS for d in dims):
+        level = "adset"
+    else:
+        level = "campaign"
 
     # Campos que NÃO vão no params fields= da insights API
     # São campos de nível de objeto (ad/adset/campaign) ou inválidos no insights
@@ -181,54 +189,74 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
         insights_fields = ["impressions","spend","clicks","cpm","ctr","reach"]
 
     rows = []
-    for acc in accounts:
-        acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
-        acc_name = acc.get("name","") if isinstance(acc,dict) else ""
-        params = {
-            "access_token": token["access_token"],
-            "level": level,
-            "fields": ",".join(insights_fields),
-            "time_range": json.dumps({"since":date_start,"until":date_end}),
-            "time_increment": 1,
-            "limit": 500
-        }
-        if breakdown_dims:
-            params["breakdowns"] = ",".join(breakdown_dims)
-
-        # Lead form fields não podem ser combinados com métricas normais
-        if has_lead and not any(m in insights_fields for m in ["impressions","spend","clicks"]):
-            params["fields"] = ",".join([f for f in insights_fields if f in LEAD_FIELDS] + ["lead_id","created_time"])
-
-        resp = requests.get(f"https://graph.facebook.com/v19.0/{acc_id}/insights", params=params)
-        data = resp.json()
-        if "error" in data:
-            raise Exception(f"Meta API: {data['error']['message']}")
-
-        for d in data.get("data",[]):
-            row = {
-                "date": d.get("date_start",""),
-                "platform": "facebook ads",
-                "account_id": acc_id,
-                "account_name": acc_name,
-                "campaign_id": d.get("campaign_id",""),
-                "campaign_name": d.get("campaign_name",""),
-                "adset_id": d.get("adset_id",""),
-                "adset_name": d.get("adset_name",""),
-                "ad_id": d.get("ad_id",""),
-                "ad_name": d.get("ad_name",""),
+    # Processa em batches de 10 contas por vez para não estourar timeout
+    BATCH_SIZE = 10
+    for i in range(0, len(accounts), BATCH_SIZE):
+        batch = accounts[i:i+BATCH_SIZE]
+        
+        # Monta batch request da Meta API
+        batch_requests = []
+        for acc in batch:
+            acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
+            import urllib.parse
+            p = {
+                "level": level,
+                "fields": ",".join(insights_fields),
+                "time_range": json.dumps({"since":date_start,"until":date_end}),
+                "time_increment": 1,
+                "limit": 500
             }
-            for f in insights_fields:
-                v = d.get(f)
-                if isinstance(v, list) and v and isinstance(v[0], dict):
-                    row[f] = float(v[0].get("value", 0))
-                elif v is not None:
-                    try: row[f] = float(v)
-                    except: row[f] = v
-            # Adiciona campos de breakdown se presentes
-            for bd in breakdown_dims:
-                if bd in d:
-                    row[bd] = d[bd]
-            rows.append(row)
+            if breakdown_dims:
+                p["breakdowns"] = ",".join(breakdown_dims)
+            batch_requests.append({
+                "method": "GET",
+                "relative_url": f"{acc_id}/insights?{urllib.parse.urlencode(p)}"
+            })
+
+        resp = requests.post(
+            "https://graph.facebook.com/v19.0/",
+            params={"access_token": token["access_token"]},
+            json={"batch": batch_requests},
+            timeout=55
+        )
+        batch_results = resp.json()
+        if isinstance(batch_results, dict) and "error" in batch_results:
+            raise Exception(f"Meta Batch API: {batch_results['error']['message']}")
+
+        for idx, result in enumerate(batch_results):
+            if not result or result.get("code") != 200:
+                continue
+            acc = batch[idx]
+            acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
+            acc_name = acc.get("name","") if isinstance(acc,dict) else ""
+            body = json.loads(result.get("body","{}"))
+            if "error" in body:
+                print(f"[SYNC] Conta {acc_id} erro: {body['error']['message']}")
+                continue
+            for d in body.get("data",[]):
+                row = {
+                    "date": d.get("date_start",""),
+                    "platform": "facebook ads",
+                    "account_id": acc_id,
+                    "account_name": acc_name,
+                    "campaign_id": d.get("campaign_id",""),
+                    "campaign_name": d.get("campaign_name",""),
+                    "adset_id": d.get("adset_id",""),
+                    "adset_name": d.get("adset_name",""),
+                    "ad_id": d.get("ad_id",""),
+                    "ad_name": d.get("ad_name",""),
+                }
+                for f in insights_fields:
+                    v = d.get(f)
+                    if isinstance(v, list) and v and isinstance(v[0], dict):
+                        row[f] = float(v[0].get("value", 0))
+                    elif v is not None:
+                        try: row[f] = float(v)
+                        except: row[f] = v
+                for bd in breakdown_dims:
+                    if bd in d:
+                        row[bd] = d[bd]
+                rows.append(row)
     return rows
 
 def fetch_tiktok(token, accounts, tbl, date_start, date_end):
