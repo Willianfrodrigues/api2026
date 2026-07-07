@@ -360,18 +360,28 @@ def ensure_bq_dataset(bq, project, dataset):
 def upsert_bq(bq, project, dataset, table_name, rows):
     from google.cloud import bigquery
     if not rows: return 0
+
+    # Limpa valores: remove _synced_at e converte float inteiros para int
+    clean_rows = []
     for r in rows:
-        r["_synced_at"] = datetime.now(timezone.utc).isoformat()
+        clean = {}
+        for k, v in r.items():
+            if k == "_synced_at":
+                continue
+            if isinstance(v, float) and v == int(v):
+                clean[k] = int(v)
+            else:
+                clean[k] = v
+        clean_rows.append(clean)
 
     # Garante que o dataset existe
     ensure_bq_dataset(bq, project, dataset)
 
     full = f"{project}.{dataset}.{table_name}"
 
-    # WRITE_TRUNCATE: apaga e reinsere — correto para dados de ads que mudam retroativamente
-    job = bq.load_table_from_json(rows, full, job_config=bigquery.LoadJobConfig(
+    job = bq.load_table_from_json(clean_rows, full, job_config=bigquery.LoadJobConfig(
         write_disposition="WRITE_TRUNCATE",
         autodetect=True
     ))
     job.result()
-    return len(rows)
+    return len(clean_rows)
