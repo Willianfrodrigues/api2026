@@ -367,32 +367,11 @@ def upsert_bq(bq, project, dataset, table_name, rows):
     ensure_bq_dataset(bq, project, dataset)
 
     full = f"{project}.{dataset}.{table_name}"
-    tmp  = f"{project}.{dataset}.{table_name}_tmp_{int(datetime.now().timestamp())}"
 
-    job = bq.load_table_from_json(rows, tmp, job_config=bigquery.LoadJobConfig(
-        write_disposition="WRITE_TRUNCATE", autodetect=True))
+    # WRITE_TRUNCATE: apaga e reinsere — correto para dados de ads que mudam retroativamente
+    job = bq.load_table_from_json(rows, full, job_config=bigquery.LoadJobConfig(
+        write_disposition="WRITE_TRUNCATE",
+        autodetect=True
+    ))
     job.result()
-
-    sample = rows[0]
-    # Chave de merge — combina date + IDs de hierarquia + breakdowns
-    KEY_CANDIDATES = ["date","date_start","campaign_id","adset_id","ad_id",
-                      "age","gender","country","country_code","region",
-                      "publisher_platform","platform_position","impression_device"]
-    key_cols = [k for k in KEY_CANDIDATES if k in sample and sample[k] not in (None,"","0")]
-    if not key_cols:
-        key_cols = ["date"] if "date" in sample else list(sample.keys())[:2]
-    merge_on = " AND ".join(f"T.{k}=S.{k}" for k in key_cols) if key_cols else "T.date=S.date"
-    non_key = [k for k in sample if k not in key_cols]
-    set_cols = ", ".join(f"T.{k}=S.{k}" for k in non_key) if non_key else "T._synced_at=S._synced_at"
-
-    try:
-        bq.query(f"""
-            MERGE `{full}` T USING `{tmp}` S ON {merge_on}
-            WHEN MATCHED THEN UPDATE SET {set_cols}
-            WHEN NOT MATCHED THEN INSERT ROW
-        """).result()
-    except Exception:
-        bq.query(f"CREATE TABLE IF NOT EXISTS `{full}` AS SELECT * FROM `{tmp}`").result()
-
-    bq.delete_table(tmp, not_found_ok=True)
     return len(rows)
