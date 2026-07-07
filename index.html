@@ -1589,38 +1589,40 @@ async function loadWzAccounts(){
   renderWzAccounts(accs);
 }
 
+// Cache global de contas para o wizard
+let WZ_ACCS = [];
+
 function renderWzAccounts(accs){
+  if(accs) WZ_ACCS = accs;
   const q = (document.getElementById('wz-acc-search')?.value||'').toLowerCase();
-  const filtered = accs.filter(a=>!q||(a.name||a.id||'').toLowerCase().includes(q));
+  const filtered = WZ_ACCS.filter(a=>!q||(a.name||a.id||'').toLowerCase().includes(q));
   const avail = document.getElementById('wz-acc-avail');
   const sel   = document.getElementById('wz-acc-sel');
   if(!avail||!sel) return;
   avail.innerHTML = filtered.map(a=>{
     const id=a.id||a; const name=a.name||id;
-    return `<div class="acc-item" onclick="toggleWzAcc('${id}',${JSON.stringify(accs)})">
-      <input type="checkbox" ${WZ.selAccs.has(id)?'checked':''} style="accent-color:var(--teal)">
+    const checked = WZ.selAccs.has(id);
+    return `<div class="acc-item" onclick="toggleWzAcc('${id}')">
+      <input type="checkbox" ${checked?'checked':''} style="accent-color:var(--teal)" onclick="event.stopPropagation();toggleWzAcc('${id}')">
       <div><div class="acc-name">${name}</div><div class="acc-id">${id}</div></div>
     </div>`;
   }).join('')||'<div style="padding:10px 12px;font-size:11px;color:var(--mu)">Nenhuma conta disponível</div>';
-  const selAccs = accs.filter(a=>WZ.selAccs.has(a.id||a));
-  sel.innerHTML = selAccs.map(a=>`<div class="acc-item">
+  const selList = WZ_ACCS.filter(a=>WZ.selAccs.has(a.id||a));
+  sel.innerHTML = selList.map(a=>`<div class="acc-item" onclick="toggleWzAcc('${a.id||a}')">
     <span style="color:var(--teal)">✓</span>
     <div><div class="acc-name">${a.name||a.id||a}</div><div class="acc-id">${a.id||a}</div></div>
   </div>`).join('')||'<div style="padding:10px 12px;font-size:11px;color:var(--mu)">Nenhuma selecionada</div>';
   document.getElementById('wz-acc-cnt').textContent = WZ.selAccs.size;
 }
 
-function toggleWzAcc(id, accs){
+function toggleWzAcc(id){
   WZ.selAccs.has(id)?WZ.selAccs.delete(id):WZ.selAccs.add(id);
-  renderWzAccounts(accs);
+  renderWzAccounts();
 }
 
 function wzSelectAll(){
-  const plat=document.getElementById('wz-plat').value;
-  const conn=DB.connections.find(c=>c.platform===plat);
-  (conn?.accounts||[]).forEach(a=>WZ.selAccs.add(a.id||a));
-  const accs=conn?.accounts||[];
-  renderWzAccounts(accs);
+  WZ_ACCS.forEach(a=>WZ.selAccs.add(a.id||a));
+  renderWzAccounts();
 }
 
 function wzSetStep(n){
