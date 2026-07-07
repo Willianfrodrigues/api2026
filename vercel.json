@@ -3,6 +3,7 @@
   "builds": [
     { "src": "api/manage.py",                  "use": "@vercel/python" },
     { "src": "api/sync.py",                    "use": "@vercel/python" },
+    { "src": "api/fields.py",                  "use": "@vercel/python" },
     { "src": "api/cron/run.py",                "use": "@vercel/python" },
     { "src": "api/oauth/meta/start.py",        "use": "@vercel/python" },
     { "src": "api/oauth/meta/callback.py",     "use": "@vercel/python" },
@@ -18,6 +19,7 @@
     { "path": "/api/cron/run", "schedule": "0 3 * * *" }
   ],
   "routes": [
+    { "src": "/api/fields",                   "dest": "/api/fields.py" },
     { "src": "/api/connections(.*)",          "dest": "/api/manage.py" },
     { "src": "/api/destinations/test",         "dest": "/api/manage.py" },
     { "src": "/api/destinations(.*)",          "dest": "/api/manage.py" },
