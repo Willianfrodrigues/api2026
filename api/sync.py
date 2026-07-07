@@ -90,13 +90,19 @@ def run_transfer(tr, slot):
     for tbl in tables:
         t1 = time.time()
         try:
+            print(f"[SYNC] Buscando dados: {tbl['bq_table']} | contas: {len(accounts)} | {date_start} -> {date_end}")
             rows = fetch_platform(platform, token, accounts, tbl, date_start, date_end)
+            print(f"[SYNC] Linhas buscadas: {len(rows)}")
             n = upsert_bq(bq, tr["bq_project"], tr["bq_dataset"], tbl["bq_table"], rows)
             ms = int((time.time()-t1)*1000)
+            print(f"[SYNC] BQ ok: {n} linhas em {ms}ms")
             total_rows += n
             add_log(tid, tbl["bq_table"], slot.get("time","—"), "ok", n, None, ms)
             table_results.append({"table":tbl["bq_table"],"rows":n,"status":"ok"})
         except Exception as e:
+            import traceback
+            err_detail = traceback.format_exc()
+            print(f"[SYNC ERROR] {tbl['bq_table']}: {err_detail}")
             ms = int((time.time()-t1)*1000)
             add_log(tid, tbl["bq_table"], slot.get("time","—"), "error", 0, str(e), ms)
             table_results.append({"table":tbl["bq_table"],"status":"error","error":str(e)})
@@ -119,28 +125,109 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
     mets = tbl.get("metrics",[])
     breakdown = tbl.get("breakdown","campaign")
     level = {"campaign":"campaign","adgroup":"adset","ad":"ad"}.get(breakdown,"campaign")
-    api_fields = list(dict.fromkeys([f for f in dims+mets if f not in ("account_id","account_name")]))
-    breakdown_dims = [d for d in dims if d in ("age","gender","country","region","publisher_platform","platform_position","impression_device")]
+
+    # Campos que NÃO vão no params fields= da insights API
+    # São campos de nível de objeto (ad/adset/campaign) ou inválidos no insights
+    NON_INSIGHTS_FIELDS = {
+        "account_id","account_name","campaign_id","campaign_name",
+        "adset_id","adset_name","ad_id","ad_name",
+        "ad_creative_id","ad_creative_name","creative_id","creative_name",
+        "ad_title","ad_body","ad_status","ad_configured_status",
+        "adset_status","adset_configured_status","campaign_status","campaign_configured_status",
+        "campaign_objective","campaign_buying_type","bid_type","bid_amount","bid_strategy",
+        "optimization_goal","daily_budget","lifetime_budget","targeting",
+        "targeting_age_min","targeting_age_max","targeting_country","targeting_location_type",
+        "page_id","page_name","post_id","post_type","post_name","product_id",
+        "quality_ranking","engagement_rate_ranking","conversion_rate_ranking",
+        "attribution_setting","account_currency","account_timezone",
+        "data_source","business_name","destination_url","promoted_post_url",
+        "external_destination_url","url_tags","tracking_template",
+        "image_url","thumbnail_url","object_type","call_to_action_type",
+        "year","month","quarter","week","year_month","hour",
+        "action_type","day_of_week",
+    }
+
+    # Campos de breakdowns (passados via params["breakdowns"])
+    BREAKDOWN_FIELDS = {
+        "age","gender","country","region","country_code",
+        "publisher_platform","platform_position","impression_device","device_platform",
+    }
+
+    # Campos de lead form (incompatíveis com métricas normais)
+    LEAD_FIELDS = {"lead_form_id","lead_form_name","lead_form_status"}
+
+    has_lead = any(d in LEAD_FIELDS for d in dims)
+
+    # Monta lista de fields para a API de insights
+    insights_fields = []
+    breakdown_dims = []
+
+    for f in dims + mets:
+        if f in NON_INSIGHTS_FIELDS:
+            continue
+        elif f in BREAKDOWN_FIELDS:
+            breakdown_dims.append(f)
+        elif f in LEAD_FIELDS:
+            if has_lead:
+                insights_fields.append(f)
+        else:
+            insights_fields.append(f)
+
+    # Remove duplicatas mantendo ordem
+    insights_fields = list(dict.fromkeys(insights_fields))
+    breakdown_dims = list(dict.fromkeys(breakdown_dims))
+
+    if not insights_fields:
+        insights_fields = ["impressions","spend","clicks","cpm","ctr","reach"]
+
     rows = []
     for acc in accounts:
         acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
         acc_name = acc.get("name","") if isinstance(acc,dict) else ""
-        params = {"access_token":token["access_token"],"level":level,
-                  "fields":",".join(api_fields) if api_fields else "impressions,spend,clicks",
-                  "time_range":json.dumps({"since":date_start,"until":date_end}),
-                  "time_increment":1,"limit":500}
-        if breakdown_dims: params["breakdowns"] = ",".join(breakdown_dims)
+        params = {
+            "access_token": token["access_token"],
+            "level": level,
+            "fields": ",".join(insights_fields),
+            "time_range": json.dumps({"since":date_start,"until":date_end}),
+            "time_increment": 1,
+            "limit": 500
+        }
+        if breakdown_dims:
+            params["breakdowns"] = ",".join(breakdown_dims)
+
+        # Lead form fields não podem ser combinados com métricas normais
+        if has_lead and not any(m in insights_fields for m in ["impressions","spend","clicks"]):
+            params["fields"] = ",".join([f for f in insights_fields if f in LEAD_FIELDS] + ["lead_id","created_time"])
+
         resp = requests.get(f"https://graph.facebook.com/v19.0/{acc_id}/insights", params=params)
         data = resp.json()
-        if "error" in data: raise Exception(f"Meta API: {data['error']['message']}")
+        if "error" in data:
+            raise Exception(f"Meta API: {data['error']['message']}")
+
         for d in data.get("data",[]):
-            row = {"date":d.get("date_start",""),"platform":"facebook ads","account_id":acc_id,"account_name":acc_name}
-            for f in api_fields:
+            row = {
+                "date": d.get("date_start",""),
+                "platform": "facebook ads",
+                "account_id": acc_id,
+                "account_name": acc_name,
+                "campaign_id": d.get("campaign_id",""),
+                "campaign_name": d.get("campaign_name",""),
+                "adset_id": d.get("adset_id",""),
+                "adset_name": d.get("adset_name",""),
+                "ad_id": d.get("ad_id",""),
+                "ad_name": d.get("ad_name",""),
+            }
+            for f in insights_fields:
                 v = d.get(f)
-                if isinstance(v,list) and v and isinstance(v[0],dict): row[f] = float(v[0].get("value",0))
+                if isinstance(v, list) and v and isinstance(v[0], dict):
+                    row[f] = float(v[0].get("value", 0))
                 elif v is not None:
                     try: row[f] = float(v)
                     except: row[f] = v
+            # Adiciona campos de breakdown se presentes
+            for bd in breakdown_dims:
+                if bd in d:
+                    row[bd] = d[bd]
             rows.append(row)
     return rows
 
