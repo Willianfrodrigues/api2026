@@ -306,7 +306,7 @@ def get_active_transfers_for_slot(slot_time):
             })
     return result
 
-def update_transfer_run(transfer_id, status, rows):
+def update_transfer_run(transfer_id, status, rows, error=None):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("UPDATE pipe_transfers SET last_run=NOW(),last_status=%s,last_rows=%s WHERE id=%s",
@@ -345,11 +345,26 @@ def get_bq_client(sa_json, project):
     creds = sa_mod.Credentials.from_service_account_info(sa)
     return bigquery.Client(credentials=creds, project=project)
 
+def ensure_bq_dataset(bq, project, dataset):
+    """Cria o dataset no BigQuery se não existir."""
+    from google.cloud import bigquery
+    from google.api_core.exceptions import NotFound
+    dataset_ref = f"{project}.{dataset}"
+    try:
+        bq.get_dataset(dataset_ref)
+    except NotFound:
+        ds = bigquery.Dataset(dataset_ref)
+        ds.location = "US"
+        bq.create_dataset(ds, exists_ok=True)
+
 def upsert_bq(bq, project, dataset, table_name, rows):
     from google.cloud import bigquery
     if not rows: return 0
     for r in rows:
         r["_synced_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Garante que o dataset existe
+    ensure_bq_dataset(bq, project, dataset)
 
     full = f"{project}.{dataset}.{table_name}"
     tmp  = f"{project}.{dataset}.{table_name}_tmp_{int(datetime.now().timestamp())}"
