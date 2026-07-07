@@ -1,7 +1,4 @@
 {
-  "functions": {
-    "api/**/*.py": { "runtime": "python3.9", "maxDuration": 60 }
-  },
   "crons": [
     { "path": "/api/cron/run", "schedule": "0 3 * * *" }
   ],
