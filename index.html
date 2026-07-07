@@ -295,7 +295,7 @@ select.fi { cursor: pointer; }
     <div class="sb-section">Connect</div>
     <div class="ni on" onclick="nav('sources',this)">
       <span class="ni-ic">🔗</span> Data sources
-      <span class="ni-badge">4</span>
+      <span class="ni-badge" id="badge-sources" style="display:none">0</span>
     </div>
     <div class="sb-section">Manage</div>
     <div class="ni" onclick="nav('destinations',this)">
@@ -306,7 +306,7 @@ select.fi { cursor: pointer; }
     </div>
     <div class="ni" onclick="nav('transfers',this)">
       <span class="ni-ic">⚡</span> Data transfers
-      <span class="ni-badge">6</span>
+      <span class="ni-badge" id="badge-transfers" style="display:none">0</span>
     </div>
     <div class="sb-section">Monitor</div>
     <div class="ni" onclick="nav('logs',this)">
@@ -317,8 +317,8 @@ select.fi { cursor: pointer; }
     <div class="sb-status">
       <span class="dot-live"></span>
       <div>
-        <div style="font-size:11px;color:var(--tx2);font-weight:500">6 transfers ativos</div>
-        <div style="font-size:10px;margin-top:1px">último sync 03:42</div>
+        <div style="font-size:11px;color:var(--tx2);font-weight:500">0 transfers ativos</div>
+        <div style="font-size:10px;margin-top:1px" id="sb-last-sync">—</div>
       </div>
     </div>
   </div>
@@ -776,16 +776,23 @@ select.fi { cursor: pointer; }
 
       <!-- STEP 1 (hidden por padrão, wizard começa no step 3 para demo) -->
       <div id="wz-s1" style="display:none">
-        <div class="form-row"><label class="form-label">Transfer name</label><input class="fi" type="text" placeholder="ex: Fsce_full"></div>
+        <div class="form-row"><label class="form-label">Transfer name</label><input class="fi" id="wz-name" type="text" placeholder="ex: Fsce_full"></div>
         <div class="grid2 mb12">
           <div><label class="form-label">Data source</label>
-            <select class="fi" onchange="updateWzStep1(this)">
-              <option>📘 Facebook Ads</option><option>🎯 Google DV360</option><option>🎵 TikTok Ads</option><option>🎬 Kwai</option>
+            <select class="fi" id="wz-plat" onchange="loadWzStep1()">
+              <option value="meta">📘 Facebook Ads</option>
+              <option value="dv360">🎯 Google DV360</option>
+              <option value="tiktok">🎵 TikTok Ads</option>
+              <option value="kwai">🎬 Kwai</option>
             </select>
           </div>
           <div><label class="form-label">Destination BQ</label>
-            <select class="fi"><option>Facebook → supermetrics_face</option><option>DV360 → supermetrics_dv360</option><option>TikTok → tiktok_ads</option></select>
+            <select class="fi" id="wz-dest"><option value="">Selecione um destino…</option></select>
           </div>
+        </div>
+        <div id="wz-no-dest" style="display:none;padding:10px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.3);border-radius:8px;font-size:12px;color:var(--warn)">
+          ⚠ Nenhum destino configurado para esta plataforma.
+          <button class="btn btn-o btn-sm" onclick="closeMo('mo-transfer');nav('destinations',document.querySelectorAll('.ni')[3])">Criar destino →</button>
         </div>
       </div>
 
@@ -805,7 +812,7 @@ select.fi { cursor: pointer; }
             </div>
           </div>
         </div>
-        <div class="form-row"><label class="form-label">Table group</label><select class="fi"><option>Custom table group for Facebook Ads (11 tables)</option><option>Meta Regiao (1 table)</option></select></div>
+        <div class="form-row"><label class="form-label">Table group</label><select class="fi" id="wz-group"><option value="">Selecione um grupo de tabelas…</option></select></div>
         <div class="form-row">
           <label class="form-label">Schedule & janelas de dados</label>
           <div class="schedule-slots" id="sched-slots"></div>
@@ -1210,11 +1217,24 @@ async function loadSources(){
 }
 
 function updateStats(){
-  document.getElementById('stat-conn').textContent = DB.connections.length;
+  const nConn = DB.connections.length;
+  const nTr   = DB.transfers.filter(t=>t.active).length;
+
+  document.getElementById('stat-conn').textContent = nConn;
   document.getElementById('stat-dest').textContent = DB.destinations.length;
-  document.getElementById('stat-tr').textContent   = DB.transfers.filter(t=>t.active).length;
+  document.getElementById('stat-tr').textContent   = nTr;
   const lastRun = DB.transfers.filter(t=>t.last_run).sort((a,b)=>b.last_run>a.last_run?1:-1)[0];
   document.getElementById('stat-lastrun').textContent = lastRun?.last_run?.slice(11,16)||'—';
+
+  // Badges da sidebar
+  const bs = document.getElementById('badge-sources');
+  const bt = document.getElementById('badge-transfers');
+  if(nConn > 0){ bs.textContent = nConn; bs.style.display = ''; } else { bs.style.display = 'none'; }
+  if(nTr > 0)  { bt.textContent = nTr;   bt.style.display = ''; } else { bt.style.display = 'none'; }
+
+  // Footer
+  const foot = document.querySelector('.sb-footer .sb-status div:first-child');
+  if(foot) foot.innerHTML = `<span class="dot-live"></span>${nTr} transfer${nTr!==1?'s':''} ativo${nTr!==1?'s':''}`;
 }
 
 const PLAT = {
