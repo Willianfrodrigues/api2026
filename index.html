@@ -953,8 +953,8 @@ const CATALOG = {
 // STATE
 // ══════════════════════════════════════════
 const S = {
-  selDims: new Set(["date_start","account_name","campaign_id","campaign_name","adset_id"]),
-  selMets: new Set(["impressions","spend","clicks","unique_clicks","page_likes","reach","cpm","ctr"]),
+  selDims: new Set(),
+  selMets: new Set(),
   curPlat: "meta",
   editingTable: null,
   slots: [
@@ -1456,7 +1456,7 @@ async function deleteGroup(id){
   toast('Grupo removido','warn'); loadTableManager();
 }
 
-function openNewTableForm(groupId, platform){
+async function openNewTableForm(groupId, platform){
   S.curGroupId = groupId; S.curPlat = platform; S.editingTableId = null;
   document.getElementById('tbl-title').textContent = 'Add table';
   document.getElementById('tbl-name').value = '';
@@ -1465,11 +1465,11 @@ function openNewTableForm(groupId, platform){
   document.getElementById('tbl-plat-disp').value = PLAT[platform]?.n||platform;
   document.getElementById('s-dim').value=''; document.getElementById('s-met').value='';
   S.selDims.clear(); S.selMets.clear();
-  renderF('dim'); renderF('met'); updateTbSummary();
   openMo('mo-table');
+  await fetchFields(platform);
 }
 
-function openEditTableForm(tableId, groupId, platform){
+async function openEditTableForm(tableId, groupId, platform){
   const t = (DB.tableCache[groupId]||[]).find(x=>x.id===tableId);
   if(!t) return;
   S.curGroupId = groupId; S.curPlat = platform; S.editingTableId = tableId;
@@ -1481,8 +1481,25 @@ function openEditTableForm(tableId, groupId, platform){
   document.getElementById('s-dim').value=''; document.getElementById('s-met').value='';
   S.selDims = new Set(t.dimensions||[]);
   S.selMets = new Set(t.metrics||[]);
-  renderF('dim'); renderF('met'); updateTbSummary();
   openMo('mo-table');
+  await fetchFields(platform);
+}
+
+async function fetchFields(platform){
+  // Mostra loading
+  document.getElementById('dim-list').innerHTML = '<div style="padding:16px;text-align:center;color:var(--mu);font-size:12px">⟳ Carregando campos disponíveis...</div>';
+  document.getElementById('met-list').innerHTML = '<div style="padding:16px;text-align:center;color:var(--mu);font-size:12px">⟳ Carregando campos disponíveis...</div>';
+  try {
+    const data = await api(`/api/fields?platform=${platform}`);
+    CATALOG[platform] = {
+      dimensions: (data.dimensions||[]).map(d=>({id:d.id, l:d.label||d.id, g:d.group||null})),
+      metrics:    (data.metrics||[]).map(m=>({id:m.id, l:m.label||m.id})),
+      incompat:   data.incompat||[]
+    };
+  } catch(e) {
+    console.warn('Fields API falhou, usando catálogo estático:', e);
+  }
+  renderF('dim'); renderF('met'); updateTbSummary();
 }
 
 async function saveTableForm(){
