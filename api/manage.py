@@ -1,7 +1,8 @@
+import os
 import json
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-import sys; sys.path.insert(0, ".")
+import sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from _helpers import (
     list_tokens, delete_token,
     save_destination, list_destinations, delete_destination, test_bq_connection,

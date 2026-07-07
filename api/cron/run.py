@@ -1,3 +1,4 @@
+import os
 """
 inflr pipe — Cron endpoint
 Pode ser chamado por qualquer scheduler externo (cron-job.org, EasyCron, etc.)
@@ -15,7 +16,7 @@ from http.server import BaseHTTPRequestHandler
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse, parse_qs
 
-sys.path.insert(0, ".")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from _helpers import get_active_transfers_for_slot
 
 BRT = timedelta(hours=-3)

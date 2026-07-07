@@ -1,7 +1,7 @@
 import os,json,requests
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse,parse_qs
-import sys; sys.path.insert(0,".")
+import sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from _helpers import save_token
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):

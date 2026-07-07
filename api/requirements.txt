@@ -1,0 +1,4 @@
+requests>=2.31.0
+psycopg2-binary>=2.9.9
+google-cloud-bigquery>=3.13.0
+google-auth>=2.27.0

@@ -1,7 +1,8 @@
+import os
 import json, time, requests
 from http.server import BaseHTTPRequestHandler
 from datetime import datetime, timedelta
-import sys; sys.path.insert(0, ".")
+import sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from _helpers import (get_token, get_transfer_full, list_tables, list_transfers,
                       get_bq_client, upsert_bq, update_transfer_run, add_log)
 
