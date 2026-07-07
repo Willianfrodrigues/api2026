@@ -102,7 +102,9 @@ def run_transfer(tr, slot):
             table_results.append({"table":tbl["bq_table"],"status":"error","error":str(e)})
 
     status = "ok" if all(r["status"]=="ok" for r in table_results) else "partial"
-    update_transfer_run(tid, status, total_rows)
+    errors = [r.get("error","") for r in table_results if r.get("status")=="error"]
+    error_msg = " | ".join(errors) if errors else None
+    update_transfer_run(tid, status, total_rows, error_msg)
     return {"transfer_id":tid,"status":status,"total_rows":total_rows,
             "tables":table_results,"duration_ms":int((time.time()-t0)*1000)}
 
