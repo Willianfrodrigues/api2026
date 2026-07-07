@@ -1489,7 +1489,7 @@ function renderTransfers(){
     const firstSlot = slots[0]||{};
     const scheduleInfo = slots.length>1 ? `${firstSlot.time} BRT · d-${firstSlot.window||0} + ${slots.length-1}× intraday` : `${firstSlot.time||'—'} BRT · d-${firstSlot.window||3}`;
     const statusDot = t.last_status==='ok'?'pill-ok':t.last_status==='error'?'pill-err':t.last_status==='partial'?'pill-warn':'pill-muted';
-    const statusTxt = t.last_status==='ok'?'✓ OK':t.last_status==='error'?'✗ Erro':t.last_status==='partial'?'⚠ Partial':'—';
+    const statusTxt = t.last_status==='ok'?`✓ OK (${(t.last_rows||0).toLocaleString('pt-BR')} linhas)`:t.last_status==='error'?'✗ Erro':t.last_status==='partial'?'⚠ Partial (ver logs)':'—';
     const runs = `<div class="runs-strip">${[...Array(7)].map(()=>`<div class="run-bar-item ${t.last_status==='ok'?'ok':t.last_status==='error'?'err':t.last_status?'warn':'empty'}"></div>`).join('')}</div>`;
     return `<tr>
       <td><div class="plat-badge"><span>${P.ic}</span>${P.n}</div></td>
@@ -1524,12 +1524,43 @@ async function toggleTransferActive(id, active){
 }
 
 async function runTransfer(id){
-  toast('Executando sync…','ok');
-  const r = await api('/api/sync','POST',{transfer_id:id});
-  const res = r.results?.[0];
-  if(res?.status==='ok') toast(`✓ ${res.total_rows?.toLocaleString('pt-BR')} linhas sincronizadas`,'ok');
-  else toast(`${res?.status||'Erro'}: ${res?.error||'desconhecido'}`,'err');
-  loadTransfers();
+  // Mostra loading persistente na linha
+  const row = document.querySelector(`button[onclick="runTransfer(${id})"]`)?.closest('tr');
+  const statusCell = row?.querySelector('td:nth-child(5)');
+  const originalStatus = statusCell?.innerHTML;
+  if(statusCell) statusCell.innerHTML = `<div class="flex gap-sm"><div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--teal)"><span style="animation:spin 1s linear infinite;display:inline-block">⟳</span> Sincronizando...</div></div>`;
+
+  const btn = document.querySelector(`button[onclick="runTransfer(${id})"]`);
+  if(btn){ btn.textContent='⟳'; btn.disabled=true; }
+
+  // Adiciona animação de spin
+  if(!document.getElementById('spin-style')){
+    const s = document.createElement('style');
+    s.id='spin-style';
+    s.textContent='@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+    document.head.appendChild(s);
+  }
+
+  try {
+    const r = await api('/api/sync','POST',{transfer_id:id});
+    const res = r.results?.[0];
+    if(res?.status==='ok'){
+      toast(`✓ ${res.total_rows?.toLocaleString('pt-BR')||0} linhas sincronizadas`,'ok');
+    } else if(res?.status==='partial'){
+      const errs = res.tables?.filter(t=>t.status==='error').map(t=>t.error||t.table).join(' | ');
+      toast(`⚠ Partial: ${errs||'ver logs'}`,'warn');
+    } else if(res?.status==='skipped'){
+      toast('Plataforma não conectada','warn');
+    } else {
+      toast(`Erro: ${res?.error||res?.tables?.[0]?.error||'ver logs'}`,'err');
+    }
+  } catch(e) {
+    toast(`Timeout ou erro de conexão — verifique os Logs`,'err');
+    if(statusCell) statusCell.innerHTML = originalStatus||'';
+  }
+
+  await loadTransfers();
+  if(btn){ btn.textContent='▶'; btn.disabled=false; }
 }
 
 async function deleteTransferRow(id){
