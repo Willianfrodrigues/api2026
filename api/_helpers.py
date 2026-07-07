@@ -374,7 +374,13 @@ def upsert_bq(bq, project, dataset, table_name, rows):
     job.result()
 
     sample = rows[0]
-    key_cols = [k for k in ["date","campaign_id","adset_id","ad_id","age","gender","country"] if k in sample]
+    # Chave de merge — combina date + IDs de hierarquia + breakdowns
+    KEY_CANDIDATES = ["date","date_start","campaign_id","adset_id","ad_id",
+                      "age","gender","country","country_code","region",
+                      "publisher_platform","platform_position","impression_device"]
+    key_cols = [k for k in KEY_CANDIDATES if k in sample and sample[k] not in (None,"","0")]
+    if not key_cols:
+        key_cols = ["date"] if "date" in sample else list(sample.keys())[:2]
     merge_on = " AND ".join(f"T.{k}=S.{k}" for k in key_cols) if key_cols else "T.date=S.date"
     non_key = [k for k in sample if k not in key_cols]
     set_cols = ", ".join(f"T.{k}=S.{k}" for k in non_key) if non_key else "T._synced_at=S._synced_at"
