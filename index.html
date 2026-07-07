@@ -895,59 +895,8 @@ select.fi { cursor: pointer; }
 // ══════════════════════════════════════════
 // CATALOG - Meta Ads (amostra representativa)
 // ══════════════════════════════════════════
-const CATALOG = {
-  meta: {
-    dimensions: [
-      {id:"date_start",l:"Date"},{id:"account_id",l:"Account ID"},{id:"account_name",l:"Account name"},
-      {id:"campaign_id",l:"Campaign ID"},{id:"campaign_name",l:"Campaign name"},
-      {id:"adset_id",l:"Ad set ID"},{id:"adset_name",l:"Ad set name"},
-      {id:"ad_id",l:"Ad ID",g:"ad"},{id:"ad_name",l:"Ad name",g:"ad"},
-      {id:"creative_id",l:"Ad creative ID",g:"ad"},{id:"creative_name",l:"Ad creative name",g:"ad"},
-      {id:"data_source",l:"Data source"},{id:"business_name",l:"Business name"},
-      {id:"destination_url",l:"Destination URL"},{id:"promoted_post_url",l:"Promoted post destination URL"},
-      {id:"external_destination_url",l:"External destination URL"},{id:"day_of_week",l:"Day of week"},
-      {id:"age",l:"Age",g:"audience"},{id:"gender",l:"Gender",g:"audience"},
-      {id:"country",l:"Country",g:"region"},{id:"region",l:"Region",g:"region"},
-      {id:"publisher_platform",l:"Publisher platform",g:"placement"},
-      {id:"platform_position",l:"Platform position",g:"placement"},
-      {id:"impression_device",l:"Impression device",g:"placement"},
-      {id:"lead_form_id",l:"Lead form ID",g:"lead"},{id:"lead_form_name",l:"Lead form name",g:"lead"},
-    ],
-    metrics: [
-      {id:"impressions",l:"Impressions"},{id:"spend",l:"Amount spent"},{id:"clicks",l:"Link clicks"},
-      {id:"unique_clicks",l:"Unique clicks (all)"},{id:"page_likes",l:"Page likes"},
-      {id:"page_subscribes",l:"Page subscribes"},{id:"post_comments",l:"Post comments"},
-      {id:"post_saves",l:"Post saves"},{id:"photo_views",l:"Photo views"},
-      {id:"omni_app_installs",l:"Omni app installs"},{id:"mobile_app_installs",l:"Mobile app installs"},
-      {id:"desktop_app_installs",l:"Desktop app installs"},{id:"actions",l:"Actions"},
-      {id:"unique_link_clicks",l:"Unique link clicks"},{id:"outbound_clicks",l:"Outbound clicks"},
-      {id:"clicks_all",l:"Clicks (all)"},{id:"page_engagements",l:"Page engagements"},
-      {id:"post_engagements",l:"Post engagements"},{id:"post_reactions",l:"Post reactions"},
-      {id:"post_shares",l:"Post shares"},{id:"event_responses",l:"Event responses"},
-      {id:"checkins",l:"Check-ins"},{id:"unique_page_likes",l:"Unique page likes"},
-      {id:"unique_page_engagements",l:"Unique page engagements"},
-      {id:"unique_post_comments",l:"Unique post comments"},
-      {id:"unique_post_engagements",l:"Unique post engagements"},
-      {id:"unique_post_shares",l:"Unique post shares"},{id:"unique_photo_views",l:"Unique photo views"},
-      {id:"unique_post_reactions",l:"Unique post reactions"},
-      {id:"unique_landing_page_views",l:"Unique landing page views"},
-      {id:"new_messaging_contacts",l:"New messaging contacts"},
-      {id:"video_30s",l:"30-second video views"},{id:"video_15s",l:"15-second video views (Deprecated)"},
-      {id:"video_p25",l:"Video watches at 25%"},{id:"video_p50",l:"Video watches at 50%"},
-      {id:"video_p75",l:"Video watches at 75%"},{id:"video_p95",l:"Video watches at 95%"},
-      {id:"video_p100",l:"Video watches at 100%"},{id:"video_3s",l:"Unique three-second video views"},
-      {id:"video_play",l:"Clicks to play video"},{id:"video_curve_6",l:"Video play curve actions second: 6"},
-      {id:"reach",l:"Reach"},{id:"video_curve_3",l:"Video play curve actions second: 3"},
-      {id:"thruplay",l:"ThruPlay actions"},{id:"website_leads",l:"Website leads"},
-      {id:"landing_page_views",l:"Landing page views"},{id:"cpm",l:"CPM"},{id:"ctr",l:"CTR"},
-      {id:"cpc",l:"CPC"},{id:"frequency",l:"Frequency"},
-      {id:"purchase",l:"Purchases"},{id:"purchase_value",l:"Purchase value"},
-      {id:"roas",l:"Website purchase ROAS"},{id:"lead_submissions",l:"Lead form submissions"},
-    ],
-    incompat:[["audience","region"],["audience","placement"],["lead","audience"],
-              ["lead","region"],["lead","placement"],["lead","ad"]]
-  }
-};
+// Catálogo dinâmico — preenchido pela API /api/fields?platform=X
+const CATALOG = {};
 
 // ══════════════════════════════════════════
 // STATE
