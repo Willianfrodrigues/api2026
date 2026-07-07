@@ -185,6 +185,18 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
     insights_fields = list(dict.fromkeys(insights_fields))
     breakdown_dims = list(dict.fromkeys(breakdown_dims))
 
+    # Campos de hierarquia — sempre inclui baseado no level
+    HIERARCHY_FIELDS = ["campaign_id","campaign_name"]
+    if level in ("adset","ad"):
+        HIERARCHY_FIELDS += ["adset_id","adset_name"]
+    if level == "ad":
+        HIERARCHY_FIELDS += ["ad_id","ad_name"]
+
+    # Garante que campos de hierarquia estão nos insights_fields
+    for f in HIERARCHY_FIELDS:
+        if f not in insights_fields:
+            insights_fields.insert(0, f)
+
     if not insights_fields:
         insights_fields = ["impressions","spend","clicks","cpm","ctr","reach"]
 
