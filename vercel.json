@@ -1,0 +1,33 @@
+{
+  "functions": {
+    "api/**/*.py": { "runtime": "python3.12", "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/cron/run", "schedule": "0 3 * * *" }
+  ],
+  "rewrites": [
+    { "source": "/api/connections",           "destination": "/api/manage.py" },
+    { "source": "/api/connections/:p*",        "destination": "/api/manage.py" },
+    { "source": "/api/destinations/test",      "destination": "/api/manage.py" },
+    { "source": "/api/destinations",           "destination": "/api/manage.py" },
+    { "source": "/api/destinations/:p*",       "destination": "/api/manage.py" },
+    { "source": "/api/tablegroups",            "destination": "/api/manage.py" },
+    { "source": "/api/tablegroups/:p*",        "destination": "/api/manage.py" },
+    { "source": "/api/tables",                 "destination": "/api/manage.py" },
+    { "source": "/api/tables/:p*",             "destination": "/api/manage.py" },
+    { "source": "/api/transfers",              "destination": "/api/manage.py" },
+    { "source": "/api/transfers/:p*",          "destination": "/api/manage.py" },
+    { "source": "/api/logs",                   "destination": "/api/manage.py" },
+    { "source": "/api/sync",                   "destination": "/api/sync.py" },
+    { "source": "/api/cron/run",               "destination": "/api/cron/run.py" },
+    { "source": "/api/oauth/meta/start",       "destination": "/api/oauth/meta/start.py" },
+    { "source": "/api/oauth/meta/callback",    "destination": "/api/oauth/meta/callback.py" },
+    { "source": "/api/oauth/tiktok/start",     "destination": "/api/oauth/tiktok/start.py" },
+    { "source": "/api/oauth/tiktok/callback",  "destination": "/api/oauth/tiktok/callback.py" },
+    { "source": "/api/oauth/dv360/start",      "destination": "/api/oauth/dv360/start.py" },
+    { "source": "/api/oauth/dv360/callback",   "destination": "/api/oauth/dv360/callback.py" },
+    { "source": "/api/oauth/kwai/start",       "destination": "/api/oauth/kwai/start.py" },
+    { "source": "/api/oauth/kwai/callback",    "destination": "/api/oauth/kwai/callback.py" },
+    { "source": "/(.*)",                       "destination": "/index.html" }
+  ]
+}
