@@ -243,15 +243,18 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
     if not insights_fields:
         insights_fields = ["impressions","spend","clicks","cpm","ctr","reach"]
 
-    # Se tem campos que vêm de actions, adiciona "actions" e "action_values" no request
-    needs_actions = any(f in META_ACTIONS_MAP for f in insights_fields)
-    if needs_actions:
-        if "actions" not in insights_fields:
-            insights_fields.append("actions")
-        if "action_values" not in insights_fields:
-            insights_fields.append("action_values")
-        # Remove os campos mapeados do fields (a API não os aceita diretamente)
-        insights_fields = [f for f in insights_fields if f not in META_ACTIONS_MAP]
+    # Separa campos que vêm de actions dos campos diretos da API
+    action_fields = [f for f in insights_fields if f in META_ACTIONS_MAP]
+    direct_fields = [f for f in insights_fields if f not in META_ACTIONS_MAP]
+
+    # Se tem campos de actions, adiciona "actions" e "action_values" no request
+    if action_fields:
+        if "actions" not in direct_fields:
+            direct_fields.append("actions")
+        if "action_values" not in direct_fields:
+            direct_fields.append("action_values")
+
+    api_fields = direct_fields  # campos que vão no fields= da API
 
     rows = []
     # Processa em batches de 10 contas por vez para não estourar timeout
@@ -266,7 +269,7 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
             import urllib.parse
             p = {
                 "level": level,
-                "fields": ",".join(insights_fields),
+                "fields": ",".join(api_fields),
                 "time_range": json.dumps({"since":date_start,"until":date_end}),
                 "time_increment": 1,
                 "limit": 500
@@ -311,16 +314,10 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
                     "ad_id": d.get("ad_id",""),
                     "ad_name": d.get("ad_name",""),
                 }
-                for f in insights_fields:
-                    # Verifica se o campo vem de actions
-                    if f in META_ACTIONS_MAP:
-                        v = extract_action_value(d, META_ACTIONS_MAP[f])
-                        if v is not None:
-                            row[f] = int(v) if isinstance(v, float) and v == int(v) else v
-                        continue
+                for f in direct_fields:
+                    if f in ("actions","action_values"): continue  # arrays processados abaixo
                     v = d.get(f)
                     if isinstance(v, list) and v and isinstance(v[0], dict):
-                        # Array genérico — pega primeiro valor
                         try: row[f] = float(v[0].get("value", 0))
                         except: row[f] = 0
                     elif v is not None:
@@ -328,6 +325,13 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
                             fv = float(v)
                             row[f] = int(fv) if fv == int(fv) else fv
                         except: row[f] = v
+                # Extrai campos de actions
+                for f in action_fields:
+                    v = extract_action_value(d, META_ACTIONS_MAP[f])
+                    if v is not None:
+                        row[f] = int(v) if isinstance(v, float) and v == int(v) else v
+                    else:
+                        row[f] = 0
                 for bd in breakdown_dims:
                     if bd in d:
                         row[bd] = d[bd]
