@@ -307,13 +307,11 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
                     "platform": "facebook ads",
                     "account_id": acc_id,
                     "account_name": acc_name,
-                    "campaign_id": d.get("campaign_id",""),
-                    "campaign_name": d.get("campaign_name",""),
-                    "adset_id": d.get("adset_id",""),
-                    "adset_name": d.get("adset_name",""),
-                    "ad_id": d.get("ad_id",""),
-                    "ad_name": d.get("ad_name",""),
                 }
+                # Adiciona campos de hierarquia só se selecionados ou necessários pelo level
+                for hf in HIERARCHY_FIELDS:
+                    v = d.get(hf,"")
+                    if v: row[hf] = v
                 for f in direct_fields:
                     if f in ("actions","action_values"): continue  # arrays processados abaixo
                     v = d.get(f)
