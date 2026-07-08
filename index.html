@@ -958,7 +958,7 @@ function renderF(type){
   listEl.innerHTML=filtered.map(f=>{
     const incompat=f.g&&ig.has(f.g)&&!sel.has(f.id);
     const checked=sel.has(f.id);
-    return `<div class="fp-item${checked?' selected':''}${incompat?' incompat':''}" onclick="${incompat?'':`toggleF('${type}','${f.id}')`}">
+    return `<div class="fp-item${checked?' selected':''}${incompat?' incompat':''}" data-id="${f.id}" onclick="${incompat?'':`toggleF('${type}','${f.id}')`}">
       <input type="checkbox" ${checked?'checked':''} ${incompat?'disabled':''} style="accent-color:var(--teal);cursor:pointer;flex-shrink:0" onclick="event.stopPropagation();${incompat?'':``}">
       <span>${f.l}</span>
       ${incompat?'<span class="fp-incompat-tag">⚠ incompat</span>':''}
@@ -968,10 +968,20 @@ function renderF(type){
   updateTbSummary();
   checkConflicts();
 }
-function toggleF(type,id){
-  const sel=type==='dim'?S.selDims:S.selMets;
-  sel.has(id)?sel.delete(id):sel.add(id);
-  renderF('dim');renderF('met');
+function toggleF(type, id){
+  const sel = type==='dim'?S.selDims:S.selMets;
+  if(sel.has(id)){ sel.delete(id); } else { sel.add(id); }
+  // Atualiza só o item clicado
+  const listId = type==='dim'?'dim-list':'met-list';
+  const item = document.querySelector(`#${listId} [data-id="${id}"]`);
+  if(item){
+    const checked = sel.has(id);
+    item.classList.toggle('selected', checked);
+    const cb = item.querySelector('input[type=checkbox]');
+    if(cb) cb.checked = checked;
+  }
+  document.getElementById(type==='dim'?'dim-cnt':'met-cnt').textContent = sel.size;
+  updateTbSummary();
 }
 function selAll(type){const cat=CATALOG[S.curPlat];if(!cat)return;(type==='dim'?cat.dimensions:cat.metrics).forEach(f=>(type==='dim'?S.selDims:S.selMets).add(f.id));renderF('dim');renderF('met');}
 function clrAll(type){(type==='dim'?S.selDims:S.selMets).clear();renderF('dim');renderF('met');}
@@ -1470,24 +1480,35 @@ async function saveTableForm(){
   const name = document.getElementById('tbl-name').value.trim();
   const bq   = document.getElementById('tbl-bq').value.trim();
   if(!name||!bq){ toast('Preencha o nome da tabela','err'); return; }
-  if(!S.selDims.size && !S.selMets.size){ toast('Selecione ao menos um campo','err'); return; }
+
+  // Lê campos marcados diretamente do DOM
+  const dimItems = document.querySelectorAll('#dim-list .fp-item.selected');
+  const metItems = document.querySelectorAll('#met-list .fp-item.selected');
+  
+  // Também usa S.selDims/S.selMets como fallback
+  const dims = dimItems.length > 0 
+    ? [...dimItems].map(el=>el.getAttribute('data-id')).filter(Boolean)
+    : [...S.selDims];
+  const mets = metItems.length > 0
+    ? [...metItems].map(el=>el.getAttribute('data-id')).filter(Boolean)
+    : [...S.selMets];
+
+  if(!dims.length && !mets.length){ toast('Selecione ao menos um campo','err'); return; }
+
   const btn = document.getElementById('tbl-save-btn');
   if(btn){ btn.textContent='Salvando...'; btn.disabled=true; }
+
   const body = {
     id: S.editingTableId||undefined,
     group_id: S.curGroupId,
     name, bq_table: bq,
-    dimensions:[...S.selDims], metrics:[...S.selMets],
+    dimensions: dims,
+    metrics: mets,
     breakdown: document.getElementById('tbl-breakdown')?.value||'campaign'
   };
-  console.log('[SAVE TABLE]', JSON.stringify({
-    editingTableId: S.editingTableId,
-    dims: [...S.selDims].length,
-    mets: [...S.selMets].length,
-    method: S.editingTableId?'PATCH':'POST'
-  }));
+
+  console.log('[SAVE]', {id: body.id, dims: dims.length, mets: mets.length});
   const r = await api('/api/tables', S.editingTableId?'PATCH':'POST', body);
-  console.log('[SAVE RESULT]', r);
   toast(`Tabela "${name}" ${S.editingTableId?'atualizada':'adicionada'}!`,'ok');
   if(btn){ btn.textContent = S.editingTableId ? 'Save changes' : 'Add table'; btn.disabled=false; }
   closeMo('mo-table');
