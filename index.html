@@ -1407,11 +1407,12 @@ async function openNewTableForm(groupId, platform){
   document.getElementById('tbl-breakdown').value = 'campaign';
   document.getElementById('tbl-plat-disp').value = PLAT[platform]?.n||platform;
   document.getElementById('s-dim').value=''; document.getElementById('s-met').value='';
-  S.selDims.clear(); S.selMets.clear();
-  openMo('mo-table');
+  S.selDims = new Set(); S.selMets = new Set();
   const btn = document.getElementById('tbl-save-btn');
   if(btn) btn.textContent = 'Add table';
+  openMo('mo-table');
   await fetchFields(platform);
+  renderF('dim'); renderF('met'); updateTbSummary();
 }
 
 async function openEditTableForm(tableId, groupId, platform){
@@ -1430,27 +1431,28 @@ async function openEditTableForm(tableId, groupId, platform){
   document.getElementById('s-dim').value='';
   document.getElementById('s-met').value='';
 
-  // Carrega campos salvos ANTES de buscar catálogo
-  S.selDims = new Set(t.dimensions||[]);
-  S.selMets = new Set(t.metrics||[]);
-
-  console.log('[EDIT] dims salvos:', [...S.selDims]);
-  console.log('[EDIT] mets salvos:', [...S.selMets]);
+  // Guarda IDs salvos para restaurar após fetch
+  const savedDimIds = [...(t.dimensions||[])];
+  const savedMetIds = [...(t.metrics||[])];
 
   const btn = document.getElementById('tbl-save-btn');
   if(btn) btn.textContent = 'Save changes';
   openMo('mo-table');
+
+  // Busca catálogo
   await fetchFields(platform);
+
+  // Restaura seleções APÓS o fetch (fetchFields pode limpar)
+  S.selDims = new Set(savedDimIds);
+  S.selMets = new Set(savedMetIds);
+
+  // Re-renderiza com seleções restauradas
+  renderF('dim'); renderF('met'); updateTbSummary();
 }
 
 async function fetchFields(platform){
-  document.getElementById('dim-list').innerHTML = '<div style="padding:16px;text-align:center;color:var(--mu);font-size:12px">⟳ Carregando campos disponíveis...</div>';
-  document.getElementById('met-list').innerHTML = '<div style="padding:16px;text-align:center;color:var(--mu);font-size:12px">⟳ Carregando campos disponíveis...</div>';
-  
-  // Preserva seleções antes de atualizar catálogo
-  const savedDims = new Set(S.selDims);
-  const savedMets = new Set(S.selMets);
-  
+  document.getElementById('dim-list').innerHTML = '<div style="padding:16px;text-align:center;color:var(--mu);font-size:12px">⟳ Carregando campos...</div>';
+  document.getElementById('met-list').innerHTML = '<div style="padding:16px;text-align:center;color:var(--mu);font-size:12px">⟳ Carregando campos...</div>';
   try {
     const data = await api(`/api/fields?platform=${platform}`);
     CATALOG[platform] = {
@@ -1461,12 +1463,7 @@ async function fetchFields(platform){
   } catch(e) {
     console.warn('Fields API falhou:', e);
   }
-  
-  // Restaura seleções
-  S.selDims = savedDims;
-  S.selMets = savedMets;
-  
-  renderF('dim'); renderF('met'); updateTbSummary();
+  // Não renderiza aqui — quem chama é responsável por renderizar após restaurar seleções
 }
 
 async function saveTableForm(){
