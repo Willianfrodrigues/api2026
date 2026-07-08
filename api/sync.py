@@ -244,17 +244,14 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
         insights_fields = ["impressions","spend","clicks","cpm","ctr","reach"]
 
     # Se tem campos que vêm de actions, adiciona "actions" e "action_values" no request
-    needs_actions = any(f in ACTIONS_MAP for f in insights_fields)
+    needs_actions = any(f in META_ACTIONS_MAP for f in insights_fields)
     if needs_actions:
         if "actions" not in insights_fields:
             insights_fields.append("actions")
         if "action_values" not in insights_fields:
             insights_fields.append("action_values")
         # Remove os campos mapeados do fields (a API não os aceita diretamente)
-        insights_fields = [f for f in insights_fields if f not in ACTIONS_MAP]
-
-    # Mapeamento usando o módulo-level META_ACTIONS_MAP
-    ACTIONS_MAP = META_ACTIONS_MAP
+        insights_fields = [f for f in insights_fields if f not in META_ACTIONS_MAP]
 
     rows = []
     # Processa em batches de 10 contas por vez para não estourar timeout
@@ -316,8 +313,8 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
                 }
                 for f in insights_fields:
                     # Verifica se o campo vem de actions
-                    if f in ACTIONS_MAP:
-                        v = extract_action_value(d, ACTIONS_MAP[f])
+                    if f in META_ACTIONS_MAP:
+                        v = extract_action_value(d, META_ACTIONS_MAP[f])
                         if v is not None:
                             row[f] = int(v) if isinstance(v, float) and v == int(v) else v
                         continue
