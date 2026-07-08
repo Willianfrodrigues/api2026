@@ -22,7 +22,7 @@ class handler(BaseHTTPRequestHandler):
         advs = []
         try:
             resp = requests.get(
-                f"https://displayvideo.googleapis.com/v3/advertisers?partnerId={pid}&pageSize=100",
+                f"https://displayvideo.googleapis.com/v4/advertisers?partnerId={pid}&pageSize=100",
                 headers=hdrs, timeout=15)
             print(f"[DV360] status={resp.status_code} body={resp.text[:500]}")
             if resp.status_code == 200 and resp.text.strip():
