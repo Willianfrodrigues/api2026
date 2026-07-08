@@ -319,6 +319,16 @@ def delete_transfer(transfer_id):
     cur.execute("DELETE FROM pipe_transfers WHERE id=%s", (transfer_id,))
     conn.commit(); cur.close(); conn.close()
 
+
+def get_logs_by_transfer(transfer_id, limit=30):
+    conn = get_db(); ensure_schema(conn)
+    cur = conn.cursor()
+    cur.execute("""SELECT status, rows, ran_at, duration_ms, error
+                   FROM pipe_logs WHERE transfer_id=%s
+                   ORDER BY ran_at DESC LIMIT %s""", (transfer_id, limit))
+    rows = cur.fetchall(); cur.close(); conn.close()
+    return [{"status":r[0],"rows":r[1],"ran_at":str(r[2]),"duration_ms":r[3],"error":r[4]} for r in rows]
+
 def add_log(transfer_id, bq_table, slot_time, status, rows, error, duration_ms):
     conn = get_db(); ensure_schema(conn)
     cur = conn.cursor()
