@@ -1043,22 +1043,22 @@ function renderSlots(){
   const el=document.getElementById('sched-slots');if(!el)return;
   el.innerHTML=S.slots.map((s,i)=>`
     <div class="schedule-slot">
-      <div class="slot-type">${s.type==='daily'?'🌙 Diário':'☀ Intraday'}</div>
+      <select style="background:var(--bg2);border:1px solid var(--bd2);color:var(--teal);padding:4px 8px;border-radius:5px;font-size:11px;font-family:inherit;outline:none;font-weight:700" onchange="S.slots[${i}].type=this.value;renderSlots()">
+        <option value="daily" ${s.type==='daily'?'selected':''}>🌙 Diário</option>
+        <option value="intraday" ${s.type==='intraday'?'selected':''}>☀ Intraday</option>
+      </select>
       <div class="slot-time">
-        <select onchange="S.slots[${i}].time=this.value">
+        <select onchange="S.slots[${i}].time=this.value" style="background:var(--bg2);border:1px solid var(--bd2);color:var(--tx);padding:4px 8px;border-radius:5px;font-size:11px;font-family:'JetBrains Mono',monospace;outline:none">
           ${HOURS.map(h=>`<option${h===s.time?' selected':''}>${h}</option>`).join('')}
         </select>
         <span style="font-size:10px;color:var(--mu);margin-left:4px">BRT</span>
       </div>
       <div class="slot-window">
         <span>Janela:</span>
-        <input type="number" value="${s.window}" min="0" max="90" onchange="S.slots[${i}].window=+this.value">
-        <span>${s.window===0?'d-0 (hoje)':s.window===1?'d-1':s.window+' dias'}</span>
+        <input type="number" value="${s.window}" min="0" max="90" style="width:48px;background:var(--bg2);border:1px solid var(--bd2);color:var(--tx);padding:4px 7px;border-radius:5px;font-size:11px;font-family:inherit;outline:none;text-align:center" onchange="S.slots[${i}].window=+this.value;renderSlots()">
+        <span style="color:var(--mu)">${s.window===0?'d-0 (hoje)':s.window===1?'d-1':'d-'+s.window}</span>
       </div>
-      <div class="slot-chain">
-        ${s.type==='intraday'?'<span style="color:var(--teal);font-size:10px">⛓ encadeia no próximo</span>':'<span style="color:var(--mu);font-size:10px">ponto de partida</span>'}
-      </div>
-      ${S.slots.length>1?`<button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="removeSlot(${i})">✕</button>`:''}
+      <button class="btn btn-danger btn-sm" style="margin-left:auto;padding:4px 8px" onclick="removeSlot(${i})" title="Remover slot">✕</button>
     </div>`).join('');
 }
 function addSlot(){
@@ -1167,7 +1167,7 @@ function updateStats(){
   document.getElementById('stat-dest').textContent = DB.destinations.length;
   document.getElementById('stat-tr').textContent   = nTr;
   const lastRun = DB.transfers.filter(t=>t.last_run).sort((a,b)=>b.last_run>a.last_run?1:-1)[0];
-  document.getElementById('stat-lastrun').textContent = lastRun?.last_run?.slice(11,16)||'—';
+  document.getElementById('stat-lastrun').textContent = lastRun?.last_run ? toBRT(lastRun.last_run).slice(11,16) : '—';
 
   // Badges da sidebar
   const bs = document.getElementById('badge-sources');
@@ -1511,7 +1511,7 @@ function renderTransfers(){
     const bars = logs.length
       ? logs.map(r=>{
           const cls = r.status==='ok'?'ok':r.status==='error'?'err':'warn';
-          const dt = r.ran_at?.slice(0,16).replace('T',' ')||'';
+          const dt = toBRT(r.ran_at)||'';
           const rows = r.rows?.toLocaleString('pt-BR')||'0';
           const dur = r.duration_ms ? `${(r.duration_ms/1000).toFixed(1)}s` : '';
           const tip = `${dt} · ${rows} linhas ${dur?'· '+dur:''}${r.error?' · ⚠ '+r.error.slice(0,60):''}`;
@@ -1612,11 +1612,13 @@ async function openTransferWizard(editId){
     document.getElementById('wz-email').value = t.alert_email||'';
     S.slots = t.slots||[];
     t.account_ids?.forEach(a=>WZ.selAccs.add(a.id||a));
+    WZ.savedData = { destination_id: t.destination_id, group_id: t.group_id };
     document.getElementById('wz-title').textContent='Edit transfer';
   } else {
     document.getElementById('wz-name').value='';
     document.getElementById('wz-plat').value='meta';
     document.getElementById('wz-email').value='';
+    WZ.savedData = null;
     document.getElementById('wz-title').textContent='New transfer';
   }
 
@@ -1640,6 +1642,12 @@ async function loadWzStep1(){
   const gsel = document.getElementById('wz-group');
   gsel.innerHTML = '<option value="">Selecione um grupo…</option>'+
     groups.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+
+  // Restaura valores salvos se for edição
+  if(WZ.editId && WZ.savedData){
+    if(WZ.savedData.destination_id) dsel.value = WZ.savedData.destination_id;
+    if(WZ.savedData.group_id) gsel.value = WZ.savedData.group_id;
+  }
 }
 
 async function loadWzAccounts(){
@@ -1765,7 +1773,7 @@ async function loadLogsReal(){
     const slotType = l.slot_time==='00:00'?'<span class="pill pill-muted">diário d-3</span>':'<span class="pill pill-info">intraday</span>';
     const s=l.status==='ok'?'<span class="pill pill-ok">✓ OK</span>':l.status==='error'?'<span class="pill pill-err">✗ Erro</span>':'<span class="pill pill-warn">⚠ Partial</span>';
     return `<tr>
-      <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mu)">${l.ran_at?.slice(0,16).replace('T',' ')||'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mu)">${toBRT(l.ran_at)}</td>
       <td><strong>${l.transfer_name||'—'}</strong></td>
       <td>${P.ic} ${P.n}</td>
       <td><span class="code">${l.bq_table||'—'}</span></td>
@@ -1854,6 +1862,18 @@ function checkAuth(){
 }
 
 
+
+// Converte UTC para BRT (UTC-3)
+function toBRT(utcStr){
+  if(!utcStr) return '—';
+  const d = new Date(utcStr.replace(' ','T')+(utcStr.includes('T')?'':'-03:00'));
+  // Se já veio sem timezone, assume UTC e converte
+  const dt = utcStr.includes('+') || utcStr.endsWith('Z') 
+    ? new Date(utcStr)
+    : new Date(utcStr.replace(' ','T')+'Z');
+  dt.setHours(dt.getHours() - 3);
+  return dt.toISOString().slice(0,16).replace('T',' ');
+}
 // ══════════════════════════════════════════
 // BACKFILL
 // ══════════════════════════════════════════
