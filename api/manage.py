@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from _helpers import (
+    get_logs_by_transfer,
     list_tokens, delete_token,
     save_destination, list_destinations, delete_destination, test_bq_connection,
     save_table_group, list_table_groups, delete_table_group,
@@ -23,7 +24,9 @@ class handler(BaseHTTPRequestHandler):
         elif "/api/transfers"    in path:
             tid = qs.get("id",[""])[0]
             self._j(get_transfer_full(int(tid)) if tid else list_transfers())
-        elif "/api/logs"         in path: self._j(get_logs(300))
+        elif "/api/logs"         in path:
+            tid = qs.get('transfer_id',[''])[0]
+            self._j(get_logs_by_transfer(int(tid),30) if tid else get_logs(300))
         else: self._j({"error":"not found"},404)
 
     def do_POST(self):
