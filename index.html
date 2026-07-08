@@ -1409,6 +1409,8 @@ async function openNewTableForm(groupId, platform){
   document.getElementById('s-dim').value=''; document.getElementById('s-met').value='';
   S.selDims.clear(); S.selMets.clear();
   openMo('mo-table');
+  const btn = document.getElementById('tbl-save-btn');
+  if(btn) btn.textContent = 'Add table';
   await fetchFields(platform);
 }
 
@@ -1425,6 +1427,8 @@ async function openEditTableForm(tableId, groupId, platform){
   S.selDims = new Set(t.dimensions||[]);
   S.selMets = new Set(t.metrics||[]);
   openMo('mo-table');
+  const btn = document.getElementById('tbl-save-btn');
+  if(btn) btn.textContent = 'Save changes';
   await fetchFields(platform);
 }
 
@@ -1448,18 +1452,22 @@ async function fetchFields(platform){
 async function saveTableForm(){
   const name = document.getElementById('tbl-name').value.trim();
   const bq   = document.getElementById('tbl-bq').value.trim();
-  if(!name||!bq){ toast('Preencha nome e tabela BQ','err'); return; }
+  if(!name||!bq){ toast('Preencha o nome da tabela','err'); return; }
   if(!S.selDims.size && !S.selMets.size){ toast('Selecione ao menos um campo','err'); return; }
+  const btn = document.getElementById('tbl-save-btn');
+  if(btn){ btn.textContent='Salvando...'; btn.disabled=true; }
   const body = {
     id: S.editingTableId||undefined,
     group_id: S.curGroupId,
     name, bq_table: bq,
     dimensions:[...S.selDims], metrics:[...S.selMets],
-    breakdown: document.getElementById('tbl-breakdown').value
+    breakdown: document.getElementById('tbl-breakdown')?.value||'campaign'
   };
   await api('/api/tables', S.editingTableId?'PATCH':'POST', body);
   toast(`Tabela "${name}" ${S.editingTableId?'atualizada':'adicionada'}!`,'ok');
-  closeMo('mo-table'); loadTableManager();
+  if(btn){ btn.textContent = S.editingTableId ? 'Save changes' : 'Add table'; btn.disabled=false; }
+  closeMo('mo-table');
+  loadTableManager();
 }
 
 async function deleteTableRow(tableId, groupId){
