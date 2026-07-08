@@ -1778,24 +1778,26 @@ if(urlP.get('error')){ toast(`Erro OAuth: ${urlP.get('error')}`,'err'); history.
 
 
 // ══════════════════════════════════════════
-// AUTH
+// AUTH — login local sem endpoint externo
 // ══════════════════════════════════════════
-const TOKEN_KEY = 'inflr_pipe_token';
+const VALID_USER = 'inflr';
+const VALID_HASH = 'af3a2e1fba2306e71f4ae158e75883bb3d3e0575b3224a30579520e3b24c1661';
+const SESSION_KEY = 'inflr_pipe_auth';
 
-function getToken(){ return localStorage.getItem(TOKEN_KEY); }
-function setToken(t){ localStorage.setItem(TOKEN_KEY, t); }
-function clearToken(){ localStorage.removeItem(TOKEN_KEY); }
-
-function showLogin(){
-  document.getElementById('login-screen').style.display='flex';
-  document.querySelector('.sb').style.display='none';
-  document.querySelector('[style*="margin-left:228px"]').style.display='none';
+async function sha256(str){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
+function isLoggedIn(){ return sessionStorage.getItem(SESSION_KEY) === '1'; }
+
+function showLogin(){
+  const el = document.getElementById('login-screen');
+  if(el) el.style.display='flex';
+}
 function hideLogin(){
-  document.getElementById('login-screen').style.display='none';
-  document.querySelector('.sb').style.display='flex';
-  document.querySelector('[style*="margin-left:228px"]').style.display='block';
+  const el = document.getElementById('login-screen');
+  if(el) el.style.display='none';
 }
 
 async function doLogin(){
@@ -1803,40 +1805,23 @@ async function doLogin(){
   const pass = document.getElementById('login-pass').value;
   const btn  = document.getElementById('login-btn');
   const err  = document.getElementById('login-error');
-  if(!user||!pass){ err.textContent='Preencha usuário e senha'; err.style.display='block'; return; }
-  btn.textContent='Entrando...'; btn.disabled=true;
-  try {
-    const r = await fetch('/api/auth/login', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({user, password: pass})
-    }).then(r=>r.json());
-    if(r.ok){
-      setToken(r.token);
-      err.style.display='none';
-      hideLogin();
-      loadSources();
-    } else {
-      err.textContent = r.error||'Usuário ou senha incorretos';
-      err.style.display='block';
-    }
-  } catch(e){
-    err.textContent='Erro de conexão';
+  btn.textContent='Verificando...'; btn.disabled=true;
+  const hash = await sha256(pass);
+  if(user === VALID_USER && hash === VALID_HASH){
+    sessionStorage.setItem(SESSION_KEY, '1');
+    err.style.display='none';
+    hideLogin();
+    loadSources();
+  } else {
+    err.textContent='Usuário ou senha incorretos';
     err.style.display='block';
   }
   btn.textContent='Entrar'; btn.disabled=false;
 }
 
-async function checkAuth(){
-  const token = getToken();
-  if(!token){ showLogin(); return; }
-  const r = await fetch('/api/auth/verify', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({token})
-  }).then(r=>r.json()).catch(()=>({ok:false}));
-  if(r.ok){ hideLogin(); loadSources(); }
-  else { clearToken(); showLogin(); }
+function checkAuth(){
+  if(isLoggedIn()){ hideLogin(); loadSources(); }
+  else showLogin();
 }
 
 // ══════════════════════════════════════════
@@ -1846,7 +1831,7 @@ checkAuth();
 </script>
 
 <!-- ════════════════════ LOGIN ════════════════════ -->
-<div id="login-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;">
+<div id="login-screen" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;">
   <div style="background:var(--card);border:1px solid var(--bd2);border-radius:16px;padding:40px;width:380px;box-shadow:0 24px 80px rgba(0,0,0,.6);">
     <div style="text-align:center;margin-bottom:32px;">
       <div style="font-size:28px;font-weight:800;color:var(--teal);letter-spacing:-1px;">inflr <span style="font-size:14px;color:var(--mu);font-weight:600;letter-spacing:3px;">PIPE</span></div>
@@ -1855,14 +1840,13 @@ checkAuth();
     <div id="login-error" style="display:none;background:rgba(255,83,112,.1);border:1px solid rgba(255,83,112,.3);color:var(--err);padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:16px;"></div>
     <div class="form-row">
       <label class="form-label">Usuário</label>
-      <input class="fi" id="login-user" type="text" placeholder="admin" onkeydown="if(event.key==='Enter')doLogin()">
+      <input class="fi" id="login-user" type="text" placeholder="inflr" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <div class="form-row">
       <label class="form-label">Senha</label>
       <input class="fi" id="login-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="btn btn-p btn-full" style="margin-top:8px" onclick="doLogin()" id="login-btn">Entrar</button>
-    <div style="text-align:center;margin-top:20px;font-size:11px;color:var(--mu);">inflr · Data Operations</div>
   </div>
 </div>
 </body>
