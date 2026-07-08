@@ -10,7 +10,10 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self._body()
         tid  = body.get("transfer_id")
-        slot_time = body.get("slot_time")  # "HH:MM" — se omitido usa o primeiro slot
+        slot_time   = body.get("slot_time")
+        custom_start = body.get("date_start")
+        custom_end   = body.get("date_end")
+        is_backfill  = body.get("backfill", False)
 
         if tid:
             transfers = [get_transfer_full(tid)]
@@ -20,10 +23,9 @@ class handler(BaseHTTPRequestHandler):
         results = []
         for tr in transfers:
             if not tr: continue
-            # Determina qual slot executar
             slots = tr.get("slots") or [{"time":"00:00","window":3,"type":"daily"}]
             slot = next((s for s in slots if s.get("time")==slot_time), slots[0]) if slot_time else slots[0]
-            results.append(run_transfer(tr, slot))
+            results.append(run_transfer(tr, slot, custom_start=custom_start, custom_end=custom_end, is_backfill=is_backfill))
 
         self._j({"results": results})
 
@@ -49,7 +51,7 @@ app = handler
 
 # ── EXECUTOR ─────────────────────────────────────────────────────────────────
 
-def run_transfer(tr, slot):
+def run_transfer(tr, slot, custom_start=None, custom_end=None, is_backfill=False):
     t0 = time.time()
     tid = tr["id"]
     platform = tr["platform"]
@@ -69,10 +71,14 @@ def run_transfer(tr, slot):
         update_transfer_run(tid, "error", 0)
         return {"transfer_id":tid,"status":"error","error":f"BQ auth: {e}"}
 
-    # Janela de datas baseada no slot
-    window = int(slot.get("window", 3))
-    date_end   = datetime.today().strftime("%Y-%m-%d")
-    date_start = (datetime.today() - timedelta(days=window)).strftime("%Y-%m-%d")
+    # Janela de datas — usa customizada (backfill) ou baseada no slot
+    if custom_start and custom_end:
+        date_start = custom_start
+        date_end   = custom_end
+    else:
+        window = int(slot.get("window", 3))
+        date_end   = datetime.today().strftime("%Y-%m-%d")
+        date_start = (datetime.today() - timedelta(days=window)).strftime("%Y-%m-%d")
 
     # Filtra contas
     all_accounts  = token["account_ids"] or []
