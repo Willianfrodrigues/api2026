@@ -124,45 +124,46 @@ def run_transfer(tr, slot, custom_start=None, custom_end=None, is_backfill=False
 
 # Campos que vêm dentro do array "actions" na Meta API — não podem ir no fields= direto
 META_ACTIONS_MAP = {
-    "landing_page_views":    "landing_page_view",
-    "inline_link_clicks":    "link_click",
-    "outbound_clicks":       "outbound_click",
-    "video_thruplay_watched_actions": "video_thruplay_watched_actions",
-    "video_30_sec_watched_actions":   "video_30_sec_watched_actions",
-    "video_p25_watched_actions":      "video_p25_watched_actions",
-    "video_p50_watched_actions":      "video_p50_watched_actions",
-    "video_p75_watched_actions":      "video_p75_watched_actions",
-    "video_p95_watched_actions":      "video_p95_watched_actions",
-    "video_p100_watched_actions":     "video_p100_watched_actions",
-    "video_continuous_2_sec_watched_actions": "video_continuous_2_sec_watched_actions",
-    "video_avg_time_watched_actions": "video_avg_time_watched_actions",
-    "purchase":              "purchase",
-    "lead":                  "lead",
-    "complete_registration": "complete_registration",
-    "add_to_cart":           "add_to_cart",
-    "initiate_checkout":     "initiate_checkout",
-    "add_payment_info":      "add_payment_info",
-    "view_content":          "view_content",
-    "search":                "search",
-    "subscribe":             "subscribe",
-    "start_trial":           "start_trial",
-    "mobile_app_install":    "app_install",
-    "contact":               "contact",
-    "donate":                "donate",
-    "find_location":         "find_location",
-    "schedule":              "schedule",
-    "submit_application":    "submit_application",
-    "customize_product":     "customize_product",
+    "landing_page_views":    ("actions", "landing_page_view"),
+    "inline_link_clicks":    ("actions", "link_click"),
+    "outbound_clicks":       ("actions", "outbound_click"),
+    "purchase":              ("actions", "purchase"),
+    "lead":                  ("actions", "lead"),
+    "complete_registration": ("actions", "complete_registration"),
+    "add_to_cart":           ("actions", "add_to_cart"),
+    "initiate_checkout":     ("actions", "initiate_checkout"),
+    "add_payment_info":      ("actions", "add_payment_info"),
+    "view_content":          ("actions", "view_content"),
+    "search":                ("actions", "search"),
+    "subscribe":             ("actions", "subscribe"),
+    "start_trial":           ("actions", "start_trial"),
+    "mobile_app_install":    ("actions", "app_install"),
+    "contact":               ("actions", "contact"),
+    "donate":                ("actions", "donate"),
+    "find_location":         ("actions", "find_location"),
+    "schedule":              ("actions", "schedule"),
+    "submit_application":    ("actions", "submit_application"),
+    "customize_product":     ("actions", "customize_product"),
+    # Vídeo — vêm como arrays próprios com action_type="video_view"
+    "video_thruplay_watched_actions":          ("video_thruplay_watched_actions", "video_view"),
+    "video_30_sec_watched_actions":            ("video_30_sec_watched_actions", "video_view"),
+    "video_p25_watched_actions":               ("video_p25_watched_actions", "video_view"),
+    "video_p50_watched_actions":               ("video_p50_watched_actions", "video_view"),
+    "video_p75_watched_actions":               ("video_p75_watched_actions", "video_view"),
+    "video_p95_watched_actions":               ("video_p95_watched_actions", "video_view"),
+    "video_p100_watched_actions":              ("video_p100_watched_actions", "video_view"),
+    "video_continuous_2_sec_watched_actions":  ("video_continuous_2_sec_watched_actions", "video_view"),
+    "video_avg_time_watched_actions":          ("video_avg_time_watched_actions", "video_view"),
 }
 
-def extract_action_value(data_row, action_type_key):
-    for arr_field in ["actions","unique_actions","action_values"]:
-        arr = data_row.get(arr_field, [])
-        if isinstance(arr, list):
-            for item in arr:
-                if isinstance(item, dict) and item.get("action_type") == action_type_key:
-                    try: return float(item.get("value", 0))
-                    except: return 0
+def extract_action_value(data_row, arr_field, action_type_key):
+    """Extrai valor de um action_type específico do array indicado."""
+    arr = data_row.get(arr_field, [])
+    if isinstance(arr, list):
+        for item in arr:
+            if isinstance(item, dict) and item.get("action_type") == action_type_key:
+                try: return float(item.get("value", 0))
+                except: return 0
     return None
 
 def fetch_platform(platform, token, accounts, tbl, date_start, date_end):
@@ -253,14 +254,19 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
     action_fields = [f for f in insights_fields if f in META_ACTIONS_MAP]
     direct_fields = [f for f in insights_fields if f not in META_ACTIONS_MAP]
 
-    # Se tem campos de actions, adiciona "actions" e "action_values" no request
+    # Se tem campos de actions, adiciona os arrays necessários no request
     if action_fields:
-        if "actions" not in direct_fields:
-            direct_fields.append("actions")
+        needed_arrays = set()
+        for f in action_fields:
+            arr_field, _ = META_ACTIONS_MAP[f]
+            needed_arrays.add(arr_field)
+        for arr in needed_arrays:
+            if arr not in direct_fields:
+                direct_fields.append(arr)
         if "action_values" not in direct_fields:
             direct_fields.append("action_values")
 
-    api_fields = direct_fields  # campos que vão no fields= da API
+    api_fields = direct_fields
 
     rows = []
     # Processa em batches de 10 contas por vez para não estourar timeout
@@ -331,11 +337,9 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
                         except: row[f] = v
                 # Extrai campos de actions
                 for f in action_fields:
-                    v = extract_action_value(d, META_ACTIONS_MAP[f])
-                    if v is not None:
-                        row[f] = int(v) if isinstance(v, float) and v == int(v) else v
-                    else:
-                        row[f] = 0
+                    arr_field, action_type = META_ACTIONS_MAP[f]
+                    v = extract_action_value(d, arr_field, action_type)
+                    row[f] = int(v) if v is not None and isinstance(v, float) and v == int(v) else (v or 0)
                 for bd in breakdown_dims:
                     if bd in d:
                         row[bd] = d[bd]
