@@ -1536,9 +1536,10 @@ function renderTransfers(){
       <td>
         <div class="flex gap-sm">
           <button class="tog ${t.active?'on':''}" onclick="toggleTransferActive(${t.id},${!t.active})"></button>
-          <button class="btn btn-p btn-sm" onclick="runTransfer(${t.id})">▶</button>
-          <button class="btn btn-ghost btn-sm" onclick="openEditTransfer(${t.id})">✏</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteTransferRow(${t.id})">✕</button>
+          <button class="btn btn-p btn-sm" onclick="runTransfer(${t.id})" title="Sync agora">▶</button>
+          <button class="btn btn-o btn-sm" onclick="openBackfill(${t.id})" title="Backfill">↩</button>
+          <button class="btn btn-ghost btn-sm" onclick="openEditTransfer(${t.id})" title="Editar">✏</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteTransferRow(${t.id})" title="Remover">✕</button>
         </div>
       </td>
     </tr>`;
@@ -1852,6 +1853,55 @@ function checkAuth(){
   else showLogin();
 }
 
+
+// ══════════════════════════════════════════
+// BACKFILL
+// ══════════════════════════════════════════
+let BF_TRANSFER_ID = null;
+
+function openBackfill(transferId){
+  BF_TRANSFER_ID = transferId;
+  // Default: últimos 30 dias
+  const end = new Date();
+  const start = new Date(); start.setDate(start.getDate()-30);
+  document.getElementById('bf-start').value = start.toISOString().slice(0,10);
+  document.getElementById('bf-end').value   = end.toISOString().slice(0,10);
+  openMo('mo-backfill');
+}
+
+async function runBackfill(){
+  const start = document.getElementById('bf-start').value;
+  const end   = document.getElementById('bf-end').value;
+  if(!start||!end){ toast('Selecione as datas','err'); return; }
+  if(start>end){ toast('Data início deve ser anterior à data fim','err'); return; }
+
+  const btn = document.getElementById('bf-btn');
+  btn.textContent='Executando...'; btn.disabled=true;
+
+  toast('Backfill iniciado…','ok');
+  closeMo('mo-backfill');
+
+  try {
+    const r = await api('/api/sync','POST',{
+      transfer_id: BF_TRANSFER_ID,
+      backfill: true,
+      date_start: start,
+      date_end: end
+    });
+    const res = r.results?.[0];
+    if(res?.status==='ok'){
+      toast(`✓ Backfill concluído — ${res.total_rows?.toLocaleString('pt-BR')||0} linhas`,'ok');
+    } else {
+      toast(`Backfill: ${res?.status} — ${res?.tables?.[0]?.error||'ver logs'}`,'warn');
+    }
+  } catch(e){
+    toast('Timeout — backfill pode ter continuado em background','warn');
+  }
+
+  btn.textContent='▶ Executar backfill'; btn.disabled=false;
+  loadTransfers();
+}
+
 // ══════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════
@@ -1875,6 +1925,29 @@ checkAuth();
       <input class="fi" id="login-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="btn btn-p btn-full" style="margin-top:8px" onclick="doLogin()" id="login-btn">Entrar</button>
+  </div>
+</div>
+
+<!-- BACKFILL MODAL -->
+<div class="overlay" id="mo-backfill">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div><h2>Backfill</h2><p>Recarrega dados para um período específico</p></div>
+      <button class="btn btn-ghost btn-sm" onclick="closeMo('mo-backfill')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="grid2">
+        <div><label class="form-label">Data início</label><input class="fi" type="date" id="bf-start"></div>
+        <div><label class="form-label">Data fim</label><input class="fi" type="date" id="bf-end"></div>
+      </div>
+      <div style="margin-top:12px;padding:10px 13px;background:var(--teal-g);border:1px solid var(--bd);border-radius:8px;font-size:11px;color:var(--mu)">
+        ⚠ O backfill substitui todos os dados do período selecionado na tabela BQ.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-o" onclick="closeMo('mo-backfill')">Cancelar</button>
+      <button class="btn btn-p" id="bf-btn" onclick="runBackfill()">▶ Executar backfill</button>
+    </div>
   </div>
 </div>
 </body>
