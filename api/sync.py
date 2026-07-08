@@ -138,6 +138,7 @@ META_ACTIONS_MAP = {
     "subscribe":             ("actions", "subscribe"),
     "start_trial":           ("actions", "start_trial"),
     "mobile_app_install":    ("actions", "app_install"),
+    "video_view":            ("actions", "video_view"),
     "contact":               ("actions", "contact"),
     "donate":                ("actions", "donate"),
     "find_location":         ("actions", "find_location"),
