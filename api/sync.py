@@ -308,12 +308,12 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
                     "account_id": acc_id,
                     "account_name": acc_name,
                 }
-                # Adiciona campos de hierarquia só se selecionados ou necessários pelo level
+                # Adiciona campos de hierarquia baseado no level
                 for hf in HIERARCHY_FIELDS:
                     v = d.get(hf,"")
                     if v: row[hf] = v
                 for f in direct_fields:
-                    if f in ("actions","action_values"): continue  # arrays processados abaixo
+                    if f in ("actions","action_values","date_start","date_stop"): continue
                     v = d.get(f)
                     if isinstance(v, list) and v and isinstance(v[0], dict):
                         try: row[f] = float(v[0].get("value", 0))
