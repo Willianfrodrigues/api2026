@@ -200,6 +200,59 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
     if not insights_fields:
         insights_fields = ["impressions","spend","clicks","cpm","ctr","reach"]
 
+    # Se tem campos que vêm de actions, adiciona "actions" e "action_values" no request
+    needs_actions = any(f in ACTIONS_MAP for f in insights_fields)
+    if needs_actions:
+        if "actions" not in insights_fields:
+            insights_fields.append("actions")
+        if "action_values" not in insights_fields:
+            insights_fields.append("action_values")
+        # Remove os campos mapeados do fields (a API não os aceita diretamente)
+        insights_fields = [f for f in insights_fields if f not in ACTIONS_MAP]
+
+    # Mapeamento de campos que vêm dentro de arrays de actions na Meta API
+    ACTIONS_MAP = {
+        "landing_page_views":    "landing_page_view",
+        "inline_link_clicks":    "link_click",
+        "outbound_clicks":       "outbound_click",
+        "video_thruplay_watched_actions": "video_thruplay_watched_actions",
+        "video_30_sec_watched_actions":   "video_30_sec_watched_actions",
+        "video_p25_watched_actions":      "video_p25_watched_actions",
+        "video_p50_watched_actions":      "video_p50_watched_actions",
+        "video_p75_watched_actions":      "video_p75_watched_actions",
+        "video_p95_watched_actions":      "video_p95_watched_actions",
+        "video_p100_watched_actions":     "video_p100_watched_actions",
+        "video_continuous_2_sec_watched_actions": "video_continuous_2_sec_watched_actions",
+        "video_avg_time_watched_actions": "video_avg_time_watched_actions",
+        "purchase":              "purchase",
+        "lead":                  "lead",
+        "complete_registration": "complete_registration",
+        "add_to_cart":           "add_to_cart",
+        "initiate_checkout":     "initiate_checkout",
+        "add_payment_info":      "add_payment_info",
+        "view_content":          "view_content",
+        "search":                "search",
+        "subscribe":             "subscribe",
+        "start_trial":           "start_trial",
+        "mobile_app_install":    "app_install",
+        "contact":               "contact",
+        "donate":                "donate",
+        "find_location":         "find_location",
+        "schedule":              "schedule",
+        "submit_application":    "submit_application",
+        "customize_product":     "customize_product",
+    }
+
+    def extract_action_value(data_row, action_type_key):
+        for arr_field in ["actions","unique_actions","action_values"]:
+            arr = data_row.get(arr_field, [])
+            if isinstance(arr, list):
+                for item in arr:
+                    if isinstance(item, dict) and item.get("action_type") == action_type_key:
+                        try: return float(item.get("value", 0))
+                        except: return 0
+        return None
+
     rows = []
     # Processa em batches de 10 contas por vez para não estourar timeout
     BATCH_SIZE = 10
@@ -259,11 +312,21 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
                     "ad_name": d.get("ad_name",""),
                 }
                 for f in insights_fields:
+                    # Verifica se o campo vem de actions
+                    if f in ACTIONS_MAP:
+                        v = extract_action_value(d, ACTIONS_MAP[f])
+                        if v is not None:
+                            row[f] = int(v) if isinstance(v, float) and v == int(v) else v
+                        continue
                     v = d.get(f)
                     if isinstance(v, list) and v and isinstance(v[0], dict):
-                        row[f] = float(v[0].get("value", 0))
+                        # Array genérico — pega primeiro valor
+                        try: row[f] = float(v[0].get("value", 0))
+                        except: row[f] = 0
                     elif v is not None:
-                        try: row[f] = float(v)
+                        try:
+                            fv = float(v)
+                            row[f] = int(fv) if fv == int(fv) else fv
                         except: row[f] = v
                 for bd in breakdown_dims:
                     if bd in d:
