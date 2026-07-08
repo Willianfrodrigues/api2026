@@ -116,6 +116,49 @@ def run_transfer(tr, slot):
 
 # ── FETCHERS ─────────────────────────────────────────────────────────────────
 
+# Campos que vêm dentro do array "actions" na Meta API — não podem ir no fields= direto
+META_ACTIONS_MAP = {
+    "landing_page_views":    "landing_page_view",
+    "inline_link_clicks":    "link_click",
+    "outbound_clicks":       "outbound_click",
+    "video_thruplay_watched_actions": "video_thruplay_watched_actions",
+    "video_30_sec_watched_actions":   "video_30_sec_watched_actions",
+    "video_p25_watched_actions":      "video_p25_watched_actions",
+    "video_p50_watched_actions":      "video_p50_watched_actions",
+    "video_p75_watched_actions":      "video_p75_watched_actions",
+    "video_p95_watched_actions":      "video_p95_watched_actions",
+    "video_p100_watched_actions":     "video_p100_watched_actions",
+    "video_continuous_2_sec_watched_actions": "video_continuous_2_sec_watched_actions",
+    "video_avg_time_watched_actions": "video_avg_time_watched_actions",
+    "purchase":              "purchase",
+    "lead":                  "lead",
+    "complete_registration": "complete_registration",
+    "add_to_cart":           "add_to_cart",
+    "initiate_checkout":     "initiate_checkout",
+    "add_payment_info":      "add_payment_info",
+    "view_content":          "view_content",
+    "search":                "search",
+    "subscribe":             "subscribe",
+    "start_trial":           "start_trial",
+    "mobile_app_install":    "app_install",
+    "contact":               "contact",
+    "donate":                "donate",
+    "find_location":         "find_location",
+    "schedule":              "schedule",
+    "submit_application":    "submit_application",
+    "customize_product":     "customize_product",
+}
+
+def extract_action_value(data_row, action_type_key):
+    for arr_field in ["actions","unique_actions","action_values"]:
+        arr = data_row.get(arr_field, [])
+        if isinstance(arr, list):
+            for item in arr:
+                if isinstance(item, dict) and item.get("action_type") == action_type_key:
+                    try: return float(item.get("value", 0))
+                    except: return 0
+    return None
+
 def fetch_platform(platform, token, accounts, tbl, date_start, date_end):
     return {"meta":fetch_meta,"tiktok":fetch_tiktok,"dv360":fetch_dv360,"kwai":fetch_kwai}[platform](
         token, accounts, tbl, date_start, date_end)
@@ -210,48 +253,8 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
         # Remove os campos mapeados do fields (a API não os aceita diretamente)
         insights_fields = [f for f in insights_fields if f not in ACTIONS_MAP]
 
-    # Mapeamento de campos que vêm dentro de arrays de actions na Meta API
-    ACTIONS_MAP = {
-        "landing_page_views":    "landing_page_view",
-        "inline_link_clicks":    "link_click",
-        "outbound_clicks":       "outbound_click",
-        "video_thruplay_watched_actions": "video_thruplay_watched_actions",
-        "video_30_sec_watched_actions":   "video_30_sec_watched_actions",
-        "video_p25_watched_actions":      "video_p25_watched_actions",
-        "video_p50_watched_actions":      "video_p50_watched_actions",
-        "video_p75_watched_actions":      "video_p75_watched_actions",
-        "video_p95_watched_actions":      "video_p95_watched_actions",
-        "video_p100_watched_actions":     "video_p100_watched_actions",
-        "video_continuous_2_sec_watched_actions": "video_continuous_2_sec_watched_actions",
-        "video_avg_time_watched_actions": "video_avg_time_watched_actions",
-        "purchase":              "purchase",
-        "lead":                  "lead",
-        "complete_registration": "complete_registration",
-        "add_to_cart":           "add_to_cart",
-        "initiate_checkout":     "initiate_checkout",
-        "add_payment_info":      "add_payment_info",
-        "view_content":          "view_content",
-        "search":                "search",
-        "subscribe":             "subscribe",
-        "start_trial":           "start_trial",
-        "mobile_app_install":    "app_install",
-        "contact":               "contact",
-        "donate":                "donate",
-        "find_location":         "find_location",
-        "schedule":              "schedule",
-        "submit_application":    "submit_application",
-        "customize_product":     "customize_product",
-    }
-
-    def extract_action_value(data_row, action_type_key):
-        for arr_field in ["actions","unique_actions","action_values"]:
-            arr = data_row.get(arr_field, [])
-            if isinstance(arr, list):
-                for item in arr:
-                    if isinstance(item, dict) and item.get("action_type") == action_type_key:
-                        try: return float(item.get("value", 0))
-                        except: return 0
-        return None
+    # Mapeamento usando o módulo-level META_ACTIONS_MAP
+    ACTIONS_MAP = META_ACTIONS_MAP
 
     rows = []
     # Processa em batches de 10 contas por vez para não estourar timeout
