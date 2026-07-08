@@ -1433,9 +1433,13 @@ async function openEditTableForm(tableId, groupId, platform){
 }
 
 async function fetchFields(platform){
-  // Mostra loading
   document.getElementById('dim-list').innerHTML = '<div style="padding:16px;text-align:center;color:var(--mu);font-size:12px">⟳ Carregando campos disponíveis...</div>';
   document.getElementById('met-list').innerHTML = '<div style="padding:16px;text-align:center;color:var(--mu);font-size:12px">⟳ Carregando campos disponíveis...</div>';
+  
+  // Preserva seleções antes de atualizar catálogo
+  const savedDims = new Set(S.selDims);
+  const savedMets = new Set(S.selMets);
+  
   try {
     const data = await api(`/api/fields?platform=${platform}`);
     CATALOG[platform] = {
@@ -1444,8 +1448,13 @@ async function fetchFields(platform){
       incompat:   data.incompat||[]
     };
   } catch(e) {
-    console.warn('Fields API falhou, usando catálogo estático:', e);
+    console.warn('Fields API falhou:', e);
   }
+  
+  // Restaura seleções
+  S.selDims = savedDims;
+  S.selMets = savedMets;
+  
   renderF('dim'); renderF('met'); updateTbSummary();
 }
 
