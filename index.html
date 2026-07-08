@@ -1482,6 +1482,13 @@ async function deleteTableRow(tableId, groupId){
 async function loadTransfers(){
   const [trs, dests] = await Promise.all([api('/api/transfers'), api('/api/destinations')]);
   DB.transfers = trs; DB.destinations = dests;
+
+  // Busca histórico de runs para cada transfer
+  const logsPromises = trs.map(t => api(`/api/logs?transfer_id=${t.id}`).catch(()=>[]));
+  const allLogs = await Promise.all(logsPromises);
+  DB.transferLogs = {};
+  trs.forEach((t,i) => DB.transferLogs[t.id] = allLogs[i]||[]);
+
   renderTransfers();
 }
 
@@ -1498,7 +1505,20 @@ function renderTransfers(){
     const scheduleInfo = slots.length>1 ? `${firstSlot.time} BRT · d-${firstSlot.window||0} + ${slots.length-1}× intraday` : `${firstSlot.time||'—'} BRT · d-${firstSlot.window||3}`;
     const statusDot = t.last_status==='ok'?'pill-ok':t.last_status==='error'?'pill-err':t.last_status==='partial'?'pill-warn':'pill-muted';
     const statusTxt = t.last_status==='ok'?`✓ OK (${(t.last_rows||0).toLocaleString('pt-BR')} linhas)`:t.last_status==='error'?'✗ Erro':t.last_status==='partial'?'⚠ Partial (ver logs)':'—';
-    const runs = `<div class="runs-strip">${[...Array(7)].map(()=>`<div class="run-bar-item ${t.last_status==='ok'?'ok':t.last_status==='error'?'err':t.last_status?'warn':'empty'}"></div>`).join('')}</div>`;
+
+    // Barras de runs reais — últimos 14 runs, mais recente à direita
+    const logs = (DB.transferLogs?.[t.id]||[]).slice(0,14).reverse();
+    const bars = logs.length
+      ? logs.map(r=>{
+          const cls = r.status==='ok'?'ok':r.status==='error'?'err':'warn';
+          const dt = r.ran_at?.slice(0,16).replace('T',' ')||'';
+          const rows = r.rows?.toLocaleString('pt-BR')||'0';
+          const dur = r.duration_ms ? `${(r.duration_ms/1000).toFixed(1)}s` : '';
+          const tip = `${dt} · ${rows} linhas ${dur?'· '+dur:''}${r.error?' · ⚠ '+r.error.slice(0,60):''}`;
+          return `<div class="run-bar-item ${cls}" title="${tip}" style="cursor:pointer"></div>`;
+        }).join('')
+      : [...Array(7)].map(()=>'<div class="run-bar-item empty"></div>').join('');
+    const runs = `<div class="runs-strip">${bars}</div>`;
     return `<tr>
       <td><div class="plat-badge"><span>${P.ic}</span>${P.n}</div></td>
       <td>
