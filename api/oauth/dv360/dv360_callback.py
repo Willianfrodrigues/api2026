@@ -24,10 +24,11 @@ class handler(BaseHTTPRequestHandler):
             resp = requests.get(
                 f"https://displayvideo.googleapis.com/v3/advertisers?partnerId={pid}&pageSize=100",
                 headers=hdrs, timeout=15)
+            print(f"[DV360] status={resp.status_code} body={resp.text[:500]}")
             if resp.status_code == 200 and resp.text.strip():
                 advs = resp.json().get("advertisers", [])
         except Exception as e:
-            print(f"[DV360] {e}")
+            print(f"[DV360] erro: {e}")
         save_token("dv360", {
             "access_token": tok["access_token"],
             "refresh_token": tok.get("refresh_token"),
