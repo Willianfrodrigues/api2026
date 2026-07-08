@@ -1415,20 +1415,31 @@ async function openNewTableForm(groupId, platform){
 }
 
 async function openEditTableForm(tableId, groupId, platform){
-  const t = (DB.tableCache[groupId]||[]).find(x=>x.id===tableId);
-  if(!t) return;
+  // Busca dados frescos do banco
+  const tables = await api(`/api/tables?group_id=${groupId}`);
+  DB.tableCache[groupId] = tables;
+  const t = tables.find(x=>x.id===tableId);
+  if(!t){ toast('Tabela não encontrada','err'); return; }
+
   S.curGroupId = groupId; S.curPlat = platform; S.editingTableId = tableId;
   document.getElementById('tbl-title').textContent = 'Edit table';
   document.getElementById('tbl-name').value = t.name;
   document.getElementById('tbl-bq').value   = t.bq_table;
   document.getElementById('tbl-breakdown').value = t.breakdown||'campaign';
   document.getElementById('tbl-plat-disp').value = PLAT[platform]?.n||platform;
-  document.getElementById('s-dim').value=''; document.getElementById('s-met').value='';
+  document.getElementById('s-dim').value='';
+  document.getElementById('s-met').value='';
+
+  // Carrega campos salvos ANTES de buscar catálogo
   S.selDims = new Set(t.dimensions||[]);
   S.selMets = new Set(t.metrics||[]);
-  openMo('mo-table');
+
+  console.log('[EDIT] dims salvos:', [...S.selDims]);
+  console.log('[EDIT] mets salvos:', [...S.selMets]);
+
   const btn = document.getElementById('tbl-save-btn');
   if(btn) btn.textContent = 'Save changes';
+  openMo('mo-table');
   await fetchFields(platform);
 }
 
@@ -1472,7 +1483,14 @@ async function saveTableForm(){
     dimensions:[...S.selDims], metrics:[...S.selMets],
     breakdown: document.getElementById('tbl-breakdown')?.value||'campaign'
   };
-  await api('/api/tables', S.editingTableId?'PATCH':'POST', body);
+  console.log('[SAVE TABLE]', JSON.stringify({
+    editingTableId: S.editingTableId,
+    dims: [...S.selDims].length,
+    mets: [...S.selMets].length,
+    method: S.editingTableId?'PATCH':'POST'
+  }));
+  const r = await api('/api/tables', S.editingTableId?'PATCH':'POST', body);
+  console.log('[SAVE RESULT]', r);
   toast(`Tabela "${name}" ${S.editingTableId?'atualizada':'adicionada'}!`,'ok');
   if(btn){ btn.textContent = S.editingTableId ? 'Save changes' : 'Add table'; btn.disabled=false; }
   closeMo('mo-table');
