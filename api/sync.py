@@ -433,7 +433,10 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
             reach_dims = ["FILTER_DATE","FILTER_ADVERTISER_NAME"]
         mets_to_use = list(REACH_METRICS)
         dims_to_use = reach_dims
-        use_advertiser_filter = True  # Reach pode usar filtro de advertiser
+        use_advertiser_filter = False  # Unique Reach não suporta FILTER_ADVERTISER como filtro
+        # Garante FILTER_ADVERTISER_NAME nos dims para segmentar por advertiser
+        if "FILTER_ADVERTISER_NAME" not in dims_to_use and "FILTER_ADVERTISER" not in dims_to_use:
+            dims_to_use = ["FILTER_ADVERTISER_NAME"] + dims_to_use
     else:
         mets_to_use = STANDARD_METRICS if STANDARD_METRICS else mets
         dims_to_use = dims
