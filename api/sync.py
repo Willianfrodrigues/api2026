@@ -373,31 +373,103 @@ def fetch_tiktok(token, accounts, tbl, date_start, date_end):
 def fetch_dv360(token, accounts, tbl, date_start, date_end):
     dims = tbl.get("dimensions",["FILTER_DATE","FILTER_INSERTION_ORDER","FILTER_LINE_ITEM"])
     mets = tbl.get("metrics",["METRIC_IMPRESSIONS","METRIC_CLICKS","METRIC_REVENUE_ADVERTISER"])
-    headers = {"Authorization":f"Bearer {token['access_token']}"}
-    rows = []
     import time as _t
+
+    # Refresh do token se necessário (o token pode ter expirado)
+    access_token = token['access_token']
+    refresh_token = token.get('refresh_token')
+    if refresh_token:
+        try:
+            r = requests.post("https://oauth2.googleapis.com/token", data={
+                "client_id": os.environ.get("GOOGLE_CLIENT_ID",""),
+                "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET",""),
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token"
+            })
+            new_tok = r.json()
+            if "access_token" in new_tok:
+                access_token = new_tok["access_token"]
+                print(f"[DV360] Token refreshed OK")
+            else:
+                print(f"[DV360] Token refresh falhou: {new_tok}")
+        except Exception as e:
+            print(f"[DV360] Token refresh erro: {e}")
+
+    headers = {"Authorization":f"Bearer {access_token}"}
+    rows = []
+
     for acc in accounts:
         acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
+        print(f"[DV360] Buscando advertiser {acc_id} | {date_start} → {date_end}")
         ds=date_start.split("-"); de=date_end.split("-")
-        body={"metadata":{"title":f"inflr_{int(_t.time())}","dataRange":{"range":"CUSTOM_DATES",
-              "customStartDate":{"year":int(ds[0]),"month":int(ds[1]),"day":int(ds[2])},
-              "customEndDate":{"year":int(de[0]),"month":int(de[1]),"day":int(de[2])}}},
-              "params":{"type":"STANDARD","groupBys":dims,"metrics":mets,
-              "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}]}}
-        cr=requests.post("https://doubleclickbidmanager.googleapis.com/v2/queries",headers=headers,json=body)
-        qid=cr.json().get("queryId")
-        if not qid: continue
-        for _ in range(15):
-            _t.sleep(4)
-            rr=requests.get(f"https://doubleclickbidmanager.googleapis.com/v2/queries/{qid}/reports",headers=headers)
-            reports=rr.json().get("reports",[])
-            if reports and reports[-1].get("metadata",{}).get("status",{}).get("state")=="DONE":
-                lines=requests.get(reports[-1]["metadata"]["googleCloudStoragePath"]).text.strip().split("\n")
-                if len(lines)<2: break
-                hdrs=lines[0].split(",")
+        body={
+            "metadata":{
+                "title":f"inflr_{int(_t.time())}",
+                "dataRange":{
+                    "range":"CUSTOM_DATES",
+                    "customStartDate":{"year":int(ds[0]),"month":int(ds[1]),"day":int(ds[2])},
+                    "customEndDate":{"year":int(de[0]),"month":int(de[1]),"day":int(de[2])}
+                }
+            },
+            "params":{
+                "type":"STANDARD",
+                "groupBys":dims,
+                "metrics":mets,
+                "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}]
+            }
+        }
+        cr = requests.post(
+            "https://doubleclickbidmanager.googleapis.com/v2/queries",
+            headers=headers, json=body, timeout=30
+        )
+        print(f"[DV360] Create query status={cr.status_code} body={cr.text[:300]}")
+        qid = cr.json().get("queryId")
+        if not qid:
+            print(f"[DV360] Sem queryId — pulando conta {acc_id}")
+            continue
+
+        # Roda o query
+        run_r = requests.post(
+            f"https://doubleclickbidmanager.googleapis.com/v2/queries/{qid}:run",
+            headers=headers, json={}, timeout=30
+        )
+        print(f"[DV360] Run query status={run_r.status_code}")
+
+        # Polling — até 50s (10 tentativas × 5s)
+        for attempt in range(10):
+            _t.sleep(5)
+            rr = requests.get(
+                f"https://doubleclickbidmanager.googleapis.com/v2/queries/{qid}/reports",
+                headers=headers, timeout=15
+            )
+            reports = rr.json().get("reports",[])
+            print(f"[DV360] Poll {attempt+1}: {len(reports)} reports, status={rr.status_code}")
+            if not reports:
+                continue
+            state = reports[-1].get("metadata",{}).get("status",{}).get("state","")
+            print(f"[DV360] Report state={state}")
+            if state == "DONE":
+                gcs_path = reports[-1].get("metadata",{}).get("googleCloudStoragePath","")
+                if not gcs_path:
+                    print("[DV360] Sem GCS path")
+                    break
+                csv_r = requests.get(gcs_path, timeout=30)
+                lines = csv_r.text.strip().split("\n")
+                print(f"[DV360] CSV linhas={len(lines)}")
+                if len(lines) < 2:
+                    break
+                hdrs = [h.strip().strip('"') for h in lines[0].split(",")]
                 for line in lines[1:]:
-                    row=dict(zip(hdrs,line.split(","))); row["platform"]="google dv360"; rows.append(row)
+                    vals = [v.strip().strip('"') for v in line.split(",")]
+                    row = dict(zip(hdrs, vals))
+                    row["platform"] = "google dv360"
+                    rows.append(row)
                 break
+            elif state == "FAILED":
+                print(f"[DV360] Report FAILED: {reports[-1]}")
+                break
+
+    print(f"[DV360] Total linhas coletadas: {len(rows)}")
     return rows
 
 def fetch_kwai(token, accounts, tbl, date_start, date_end):
