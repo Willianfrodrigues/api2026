@@ -481,6 +481,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
             "https://doubleclickbidmanager.googleapis.com/v2/queries",
             headers=headers, json=body, timeout=30
         )
+        print(f"[DV360] Body enviado: {json.dumps(body)}")
         print(f"[DV360] Create query status={cr.status_code} body={cr.text[:300]}")
         qid = cr.json().get("queryId")
         if not qid:
