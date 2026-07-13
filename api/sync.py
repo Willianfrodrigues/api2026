@@ -433,6 +433,9 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
 
     print(f"[DV360] dims_final={dims_to_use} | mets_final={mets_to_use}")
 
+    headers = {"Authorization":f"Bearer {access_token}"}
+    rows = []
+
     for acc in accounts:
         acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
         print(f"[DV360] Buscando advertiser {acc_id} | {date_start} → {date_end}")
@@ -448,8 +451,8 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
             },
             "params":{
                 "type":"STANDARD",
-                "groupBys":dims,
-                "metrics":mets,
+                "groupBys":dims_to_use,
+                "metrics":mets_to_use,
                 "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}]
             }
         }
