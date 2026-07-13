@@ -433,13 +433,14 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
         dims_to_use = reach_dims
         use_advertiser_filter = False
         # UNIQUE_REACH_AUDIENCE exige janela mínima de 7 dias
-        if not custom_start:
-            reach_window = max(int(slot.get("window", 7)), 7)
-            date_end_reach = date_end
-            date_start_reach = (datetime.today() - timedelta(days=reach_window)).strftime("%Y-%m-%d")
+        from datetime import datetime as _dt, timedelta as _td
+        ds_dt = _dt.strptime(date_start, "%Y-%m-%d")
+        de_dt = _dt.strptime(date_end, "%Y-%m-%d")
+        if (de_dt - ds_dt).days < 7:
+            date_start_reach = (de_dt - _td(days=7)).strftime("%Y-%m-%d")
         else:
             date_start_reach = date_start
-            date_end_reach = date_end
+        date_end_reach = date_end
     else:
         mets_to_use = STANDARD_METRICS if STANDARD_METRICS else mets
         dims_to_use = dims
