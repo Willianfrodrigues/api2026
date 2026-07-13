@@ -427,9 +427,11 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
             reach_dims = ["FILTER_DATE","FILTER_ADVERTISER_NAME"]
         mets_to_use = list(REACH_METRICS)
         dims_to_use = reach_dims
+        use_advertiser_filter = False  # Unique Reach não suporta filtro por advertiser
     else:
         mets_to_use = STANDARD_METRICS if STANDARD_METRICS else mets
         dims_to_use = dims
+        use_advertiser_filter = True
 
     print(f"[DV360] dims_final={dims_to_use} | mets_final={mets_to_use}")
 
@@ -453,7 +455,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                 "type":"STANDARD",
                 "groupBys":dims_to_use,
                 "metrics":mets_to_use,
-                "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}]
+                "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}] if use_advertiser_filter else []
             }
         }
         cr = requests.post(
@@ -491,6 +493,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                 if not gcs_path:
                     print("[DV360] Sem GCS path")
                     break
+                csv_r = requests.get(gcs_path, timeout=30)
                 csv_text = csv_r.text.strip()
                 all_lines = csv_text.split("\n")
                 print(f"[DV360] CSV total linhas={len(all_lines)} primeiras={all_lines[:3]}")
