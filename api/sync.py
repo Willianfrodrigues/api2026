@@ -424,6 +424,9 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
             "FILTER_APP_URL","FILTER_SITE_ID",
             "FILTER_EXCHANGE_ID","FILTER_EXCHANGE",
             "FILTER_KEYWORD","FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID",
+            # Para UNIQUE_REACH_AUDIENCE, date vai no dataRange, não no groupBy
+            "FILTER_DATE","FILTER_WEEK","FILTER_MONTH","FILTER_QUARTER","FILTER_YEAR",
+            "FILTER_DAY_OF_WEEK","FILTER_TIME_OF_DAY","FILTER_YEAR_MONTH",
         }
         # Mantém FILTER_DATE — não converte para FILTER_MONTH
         reach_dims = [d for d in dims if d not in REACH_INCOMPAT_DIMS]
