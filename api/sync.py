@@ -465,7 +465,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
         else:
             print(f"[DV360] Buscando (partner level) | {date_start} → {date_end}")
         ds=date_start.split("-"); de=date_end.split("-")
-        report_type = "UNIQUE_REACH_AUDIENCE" if REACH_METRICS else "STANDARD"
+        report_type = "STANDARD" if REACH_METRICS else "STANDARD"
         ds_use = date_start_reach.split("-") if REACH_METRICS and not use_advertiser_filter else date_start.split("-")
         de_use = date_end_reach.split("-") if REACH_METRICS and not use_advertiser_filter else date_end.split("-")
         body={
@@ -481,7 +481,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                 "type": report_type,
                 "groupBys":dims_to_use,
                 "metrics":mets_to_use,
-                "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}] if (use_advertiser_filter and acc_id) else []
+                "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}] if (use_advertiser_filter and acc_id) else [{"type":"FILTER_PARTNER","value":os.environ.get("DV360_PARTNER_ID","1602856302")}]
             }
         }
         cr = requests.post(
