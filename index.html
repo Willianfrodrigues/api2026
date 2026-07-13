@@ -1482,17 +1482,8 @@ async function saveTableForm(){
   const bq   = document.getElementById('tbl-bq').value.trim();
   if(!name||!bq){ toast('Preencha o nome da tabela','err'); return; }
 
-  // Lê campos marcados diretamente do DOM
-  const dimItems = document.querySelectorAll('#dim-list .fp-item.selected');
-  const metItems = document.querySelectorAll('#met-list .fp-item.selected');
-  
-  // Também usa S.selDims/S.selMets como fallback
-  const dims = dimItems.length > 0 
-    ? [...dimItems].map(el=>el.getAttribute('data-id')).filter(Boolean)
-    : [...S.selDims];
-  const mets = metItems.length > 0
-    ? [...metItems].map(el=>el.getAttribute('data-id')).filter(Boolean)
-    : [...S.selMets];
+  const dims = [...S.selDims];
+  const mets = [...S.selMets];
 
   if(!dims.length && !mets.length){ toast('Selecione ao menos um campo','err'); return; }
 
@@ -1509,7 +1500,7 @@ async function saveTableForm(){
   };
 
   console.log('[SAVE]', {id: body.id, dims: dims.length, mets: mets.length});
-  const r = await api('/api/tables', S.editingTableId?'PATCH':'POST', body);
+  await api('/api/tables', S.editingTableId?'PATCH':'POST', body);
   toast(`Tabela "${name}" ${S.editingTableId?'atualizada':'adicionada'}!`,'ok');
   if(btn){ btn.textContent = S.editingTableId ? 'Save changes' : 'Add table'; btn.disabled=false; }
   closeMo('mo-table');
