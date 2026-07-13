@@ -1,563 +1,818 @@
-import os
-import json, time, requests
+import json, os
 from http.server import BaseHTTPRequestHandler
-from datetime import datetime, timedelta
-import sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from _helpers import (get_token, get_transfer_full, list_tables, list_transfers,
-                      get_bq_client, upsert_bq, update_transfer_run, add_log)
+from urllib.parse import urlparse, parse_qs
+import sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _helpers import get_token
+
+META_INCOMPAT = [
+    # Audience não combina com placement (doc oficial Meta)
+    ["audience","placement"],
+    # Audience não combina com region quando juntos com placement
+    ["audience","region"],
+    # Lead form não combina com audience
+    ["lead","audience"],
+    # Lead form não combina com placement
+    ["lead","placement"],
+    # Lead form não combina com region
+    ["lead","region"],
+    # Lead form não combina com ad level
+    ["lead","ad"],
+]
+
+META_DIMENSIONS = [
+    {"id":"date_start","label":"Date"},
+    {"id":"account_id","label":"Account ID"},{"id":"account_name","label":"Account name"},
+    {"id":"campaign_id","label":"Campaign ID"},{"id":"campaign_name","label":"Campaign name"},
+    {"id":"adset_id","label":"Ad set ID"},{"id":"adset_name","label":"Ad set name"},
+    {"id":"ad_id","label":"Ad ID","group":"ad"},{"id":"ad_name","label":"Ad name","group":"ad"},
+    {"id":"ad_creative_id","label":"Ad creative ID","group":"ad"},{"id":"ad_creative_name","label":"Ad creative name","group":"ad"},
+    {"id":"ad_title","label":"Ad title","group":"ad"},{"id":"ad_body","label":"Ad body","group":"ad"},
+    {"id":"object_type","label":"Object type","group":"ad"},{"id":"call_to_action_type","label":"Call-to-action type","group":"ad"},
+    {"id":"image_url","label":"Ad creative image URL","group":"ad"},
+    {"id":"url_tags","label":"URL tags (utm)","group":"ad"},
+    {"id":"post_id","label":"Post ID"},{"id":"post_type","label":"Post type"},
+    {"id":"page_id","label":"Page ID"},{"id":"page_name","label":"Page name"},
+    {"id":"product_id","label":"Product ID"},
+    {"id":"lead_form_id","label":"Lead form ID","group":"lead"},{"id":"lead_form_name","label":"Lead form name","group":"lead"},
+    {"id":"ad_status","label":"Ad status"},{"id":"adset_status","label":"Ad set status"},{"id":"campaign_status","label":"Campaign status"},
+    {"id":"campaign_objective","label":"Campaign objective"},{"id":"campaign_buying_type","label":"Campaign buying type"},
+    {"id":"bid_type","label":"Bid type"},{"id":"bid_amount","label":"Bid amount"},{"id":"bid_strategy","label":"Bid strategy"},
+    {"id":"optimization_goal","label":"Ad set optimization goal"},
+    {"id":"daily_budget","label":"Daily budget"},{"id":"lifetime_budget","label":"Lifetime budget"},
+    {"id":"targeting","label":"Targeting"},
+    {"id":"targeting_age_min","label":"Targeting minimum age"},{"id":"targeting_age_max","label":"Targeting maximum age"},
+    {"id":"targeting_country","label":"Targeting country location"},
+    {"id":"data_source","label":"Data source"},{"id":"business_name","label":"Business name"},
+    {"id":"destination_url","label":"Destination URL"},
+    {"id":"promoted_post_url","label":"Promoted post destination URL"},
+    {"id":"external_destination_url","label":"External destination URL"},
+    {"id":"day_of_week","label":"Day of week"},
+    {"id":"year","label":"Year"},{"id":"month","label":"Month"},{"id":"quarter","label":"Quarter"},
+    {"id":"hour","label":"Hour"},{"id":"year_month","label":"Year & month"},
+    {"id":"age","label":"Age","group":"audience"},{"id":"gender","label":"Gender","group":"audience"},
+    {"id":"country","label":"Country","group":"region"},{"id":"country_code","label":"Country code","group":"region"},
+    {"id":"region","label":"Region","group":"region"},
+    {"id":"publisher_platform","label":"Publisher platform","group":"placement"},
+    {"id":"platform_position","label":"Platform position","group":"placement"},
+    {"id":"impression_device","label":"Impression device","group":"placement"},
+    {"id":"device_platform","label":"Device platform","group":"placement"},
+    {"id":"placement","label":"Placement","group":"placement"},
+    {"id":"attribution_setting","label":"Attribution setting"},
+    {"id":"action_type","label":"Action type"},
+    {"id":"quality_ranking","label":"Quality ranking"},
+    {"id":"engagement_rate_ranking","label":"Engagement Rate Ranking"},
+    {"id":"conversion_rate_ranking","label":"Conversion Rate Ranking"},
+]
+
+META_METRICS = [
+    # Core performance
+    {"id":"impressions","label":"Impressions"},{"id":"reach","label":"Reach"},
+    {"id":"frequency","label":"Frequency"},{"id":"spend","label":"Amount spent"},
+    {"id":"cpm","label":"CPM"},{"id":"cpc","label":"CPC (link)"},
+    {"id":"ctr","label":"CTR (link click-through rate)"},{"id":"unique_ctr","label":"Unique CTR (link)"},
+    {"id":"cpp","label":"Cost per 1000 people reached"},
+    {"id":"clicks","label":"Clicks (all)"},{"id":"unique_clicks","label":"Unique clicks (all)"},
+    {"id":"inline_link_clicks","label":"Link clicks"},{"id":"unique_inline_link_clicks","label":"Unique link clicks"},
+    {"id":"inline_post_engagement","label":"Inline post engagement"},
+    {"id":"cost_per_unique_click","label":"Cost per unique click (all)"},
+    {"id":"cost_per_inline_link_click","label":"CPC (link)"},
+    {"id":"outbound_clicks","label":"Outbound clicks"},{"id":"unique_outbound_clicks","label":"Unique outbound clicks"},
+    {"id":"outbound_clicks_ctr","label":"Outbound CTR"},{"id":"unique_outbound_clicks_ctr","label":"Unique outbound CTR"},
+    {"id":"cost_per_outbound_click","label":"Cost per outbound click"},
+    {"id":"cost_per_unique_outbound_click","label":"Cost per unique outbound click"},
+    {"id":"landing_page_views","label":"Landing page views"},
+    {"id":"unique_landing_page_views","label":"Unique landing page views"},
+    {"id":"cost_per_landing_page_view","label":"Cost per landing page view"},
+    {"id":"deeplink_clicks","label":"Deeplink clicks"},
+    {"id":"app_store_clicks","label":"App store clicks"},
+    {"id":"social_spend","label":"Social spend"},
+    {"id":"total_action_value","label":"Total action value"},
+    {"id":"cost_per_any_action","label":"Cost per any action"},
+    # Spend by currency
+    {"id":"spend_eur","label":"Amount spent (EUR)"},{"id":"spend_gbp","label":"Amount spent (GBP)"},
+    {"id":"spend_usd","label":"Amount spent (USD)"},{"id":"spend_sek","label":"Amount spent (SEK)"},
+    # Engagement
+    {"id":"page_engagement","label":"Page engagements"},{"id":"post_engagement","label":"Post engagements"},
+    {"id":"page_likes","label":"Page likes"},{"id":"page_subscribed","label":"Page subscribes"},
+    {"id":"post_reactions","label":"Post reactions"},{"id":"post_comments","label":"Post comments"},
+    {"id":"post_saves","label":"Post saves"},{"id":"post_shares","label":"Post shares"},
+    {"id":"photo_view","label":"Photo views"},{"id":"event_responses","label":"Event responses"},
+    {"id":"checkin","label":"Check-ins"},
+    {"id":"unique_page_engagements","label":"Unique page engagements"},
+    {"id":"unique_page_likes","label":"Unique page likes"},
+    {"id":"unique_post_comments","label":"Unique post comments"},
+    {"id":"unique_post_engagements","label":"Unique post engagements"},
+    {"id":"unique_post_reactions","label":"Unique post reactions"},
+    {"id":"unique_post_shares","label":"Unique post shares"},
+    {"id":"unique_photo_views","label":"Unique photo views"},
+    {"id":"unique_event_responses","label":"Unique event responses"},
+    {"id":"unique_checkins","label":"Unique check-ins"},
+    {"id":"cost_per_page_engagement","label":"Cost per page engagement"},
+    {"id":"cost_per_page_like","label":"Cost per page like"},
+    {"id":"cost_per_post_comment","label":"Cost per post comment"},
+    {"id":"cost_per_post_engagement","label":"Cost per post engagement"},
+    {"id":"cost_per_post_reaction","label":"Cost per post reaction"},
+    {"id":"cost_per_post_share","label":"Cost per post share"},
+    {"id":"cost_per_photo_view","label":"Cost per photo view"},
+    {"id":"cost_per_event_response","label":"Cost per event response"},
+    {"id":"cost_per_checkin","label":"Cost per check-in"},
+    {"id":"cost_per_unique_link_click","label":"Cost per unique link click"},
+    # Messaging
+    {"id":"messaging_conversations_started","label":"Messaging conversations started"},
+    {"id":"cost_per_messaging_conversation","label":"Cost per messaging conversations started"},
+    {"id":"cost_per_new_messaging_contact","label":"Cost per new messaging contact"},
+    {"id":"messaging_replies","label":"Messaging replies"},
+    {"id":"messaging_reply_rate","label":"Messaging reply rate"},
+    {"id":"cost_per_messaging_reply","label":"Cost per messaging reply"},
+    {"id":"new_messaging_contacts","label":"New messaging contacts"},
+    {"id":"blocked_messaging_conversations","label":"Blocked messaging conversations"},
+    # Video
+    {"id":"video_view","label":"3-second video views"},
+    {"id":"unique_video_view_3s","label":"3-second video views (unique)"},
+    {"id":"video_continuous_2_sec_watched_actions","label":"2-second continuous video views"},
+    {"id":"ten_sec_video_view","label":"10-second video views"},
+    {"id":"video_30_sec_watched_actions","label":"30-second video views"},
+    {"id":"video_15_sec_watched_actions","label":"15-second video views (Deprecated)"},
+    {"id":"video_p25_watched_actions","label":"Video watches at 25%"},
+    {"id":"video_p50_watched_actions","label":"Video watches at 50%"},
+    {"id":"video_p75_watched_actions","label":"Video watches at 75%"},
+    {"id":"video_p95_watched_actions","label":"Video watches at 95%"},
+    {"id":"video_p100_watched_actions","label":"Video watches at 100%"},
+    {"id":"video_avg_time_watched_actions","label":"Video average watch time"},
+    {"id":"video_avg_pct_watched_actions","label":"Video average percentage watched"},
+    {"id":"video_play_actions","label":"Clicks to play video"},
+    {"id":"video_thruplay_watched_actions","label":"ThruPlay actions"},
+    {"id":"canvas_avg_view_time","label":"Avg. canvas view time"},
+    {"id":"canvas_avg_view_percent","label":"Avg. canvas view percentage"},
+    {"id":"cost_per_3s_video_view","label":"Cost per three-second video view"},
+    {"id":"cost_per_2s_continuous_video_view","label":"Cost per 2-second continuous video play"},
+    {"id":"cost_per_10s_video_view","label":"Cost per ten-second video view"},
+    {"id":"cost_per_thruplay","label":"Cost per ThruPlay"},
+    # Video play curve
+    {"id":"video_play_curve_0","label":"Video play curve: 0s"},{"id":"video_play_curve_1","label":"Video play curve: 1s"},
+    {"id":"video_play_curve_2","label":"Video play curve: 2s"},{"id":"video_play_curve_3","label":"Video play curve: 3s"},
+    {"id":"video_play_curve_4","label":"Video play curve: 4s"},{"id":"video_play_curve_5","label":"Video play curve: 5s"},
+    {"id":"video_play_curve_6","label":"Video play curve: 6s"},{"id":"video_play_curve_7","label":"Video play curve: 7s"},
+    {"id":"video_play_curve_10","label":"Video play curve: 10s"},
+    {"id":"video_play_curve_15_20","label":"Video play curve: 15-20s"},
+    {"id":"video_play_curve_20_25","label":"Video play curve: 20-25s"},
+    {"id":"video_play_curve_25_30","label":"Video play curve: 25-30s"},
+    {"id":"video_play_curve_30_40","label":"Video play curve: 30-40s"},
+    {"id":"video_play_curve_40_50","label":"Video play curve: 40-50s"},
+    {"id":"video_play_curve_50_60","label":"Video play curve: 50-60s"},
+    {"id":"video_play_curve_60plus","label":"Video play curve: 60s+"},
+    # Brand awareness
+    {"id":"estimated_ad_recallers","label":"Estimated ad recall lift (people)"},
+    {"id":"estimated_ad_recall_rate","label":"Estimated ad recall lift rate (%)"},
+    {"id":"cost_per_estimated_ad_recallers","label":"Cost per estimated ad recall lift"},
+    # Conversions general
+    {"id":"actions","label":"Actions"},{"id":"unique_actions","label":"Unique actions"},
+    {"id":"unique_conversions","label":"Unique conversions"},
+    {"id":"conversions_1d_view","label":"Conversions within 1 day of view"},
+    {"id":"conversions_7d_view","label":"Conversions within 7 days of view"},
+    {"id":"conversions_28d_view","label":"Conversions within 28 days of view"},
+    {"id":"conversions_1d_click","label":"Conversions within 1 day of click"},
+    {"id":"conversions_7d_click","label":"Conversions within 7 days of click"},
+    {"id":"conversions_28d_click","label":"Conversions within 28 days of click"},
+    {"id":"conversion_value_1d_view","label":"Conversion value within 1 day of view"},
+    {"id":"conversion_value_7d_view","label":"Conversion value within 7 days of view"},
+    {"id":"conversion_value_28d_view","label":"Conversion value within 28 days of view"},
+    {"id":"conversion_value_1d_click","label":"Conversion value within 1 day of click"},
+    {"id":"conversion_value_7d_click","label":"Conversion value within 7 days of click"},
+    {"id":"conversion_value_28d_click","label":"Conversion value within 28 days of click"},
+    # Purchases
+    {"id":"purchase","label":"Purchases"},{"id":"unique_purchases","label":"Unique purchases"},
+    {"id":"purchase_value","label":"Purchase conversion value"},{"id":"cost_per_purchase","label":"Cost per purchase"},
+    {"id":"website_purchase_roas","label":"Website purchase ROAS"},
+    {"id":"omni_purchases","label":"Omni purchases"},{"id":"omni_purchase_roas","label":"Omni purchase ROAS"},
+    {"id":"return_on_ad_spend","label":"Return on ad spend (ROAS)"},
+    # Website conversions
+    {"id":"website_purchases","label":"Website purchases"},{"id":"website_purchase_value","label":"Website purchases conversion value"},
+    {"id":"cost_per_website_purchase","label":"Cost per website purchase"},
+    {"id":"website_adds_to_cart","label":"Website adds to cart"},{"id":"website_adds_to_cart_value","label":"Website adds to cart conversion value"},
+    {"id":"cost_per_website_add_to_cart","label":"Cost per website add to cart"},
+    {"id":"website_checkouts","label":"Website checkouts initiated"},{"id":"website_checkouts_value","label":"Website checkouts initiated conversion value"},
+    {"id":"cost_per_website_checkout","label":"Cost per website checkout initiated"},
+    {"id":"website_leads","label":"Website leads"},{"id":"website_leads_value","label":"Website leads conversion value"},
+    {"id":"cost_per_website_lead","label":"Cost per website lead"},
+    {"id":"website_registrations","label":"Website registrations completed"},
+    {"id":"website_content_views","label":"Website content views"},
+    {"id":"website_searches","label":"Website searches"},
+    {"id":"website_adds_to_wishlist","label":"Website adds to wishlist"},
+    {"id":"website_payment_info_adds","label":"Website adds of payment info"},
+    {"id":"website_custom_conversions","label":"Website custom conversions"},
+    {"id":"cost_per_website_conversion","label":"Cost per website conversion"},
+    {"id":"website_conversion_value","label":"Website conversion value"},
+    {"id":"website_conversion_rate","label":"Website conversion rate"},
+    # On-Facebook
+    {"id":"onsite_purchases","label":"On-Facebook purchases"},
+    {"id":"onsite_purchase_value","label":"Conversion value of purchase on Facebook"},
+    {"id":"cost_per_onsite_purchase","label":"Cost per on-Facebook purchase"},
+    {"id":"onsite_leads","label":"On-Facebook leads"},
+    {"id":"onsite_view_content","label":"On-Facebook view content"},
+    {"id":"onsite_workflow_completion","label":"On-Facebook workflow completion"},
+    {"id":"phone_clicks","label":"Phone number clicks"},{"id":"get_directions_clicks","label":"Get directions clicks"},
+    # Leads
+    {"id":"leads","label":"Leads"},{"id":"unique_leads","label":"Unique leads"},
+    {"id":"leads_form","label":"Leads (form)"},{"id":"unique_leads_form","label":"Unique leads (form)"},
+    {"id":"cost_per_lead","label":"Cost per lead"},{"id":"cost_per_lead_form","label":"Cost per lead (form)"},
+    # Cart/Checkout
+    {"id":"adds_to_cart","label":"Adds to cart"},{"id":"unique_adds_to_cart","label":"Unique adds to cart"},
+    {"id":"initiated_checkouts","label":"Checkouts initiated"},
+    {"id":"payment_info_adds","label":"Payment info adds"},
+    {"id":"adds_to_wishlist","label":"Adds to wishlist"},
+    {"id":"content_views","label":"Content views"},
+    {"id":"searches","label":"Searches"},
+    {"id":"complete_registration","label":"Registrations completed"},
+    # Subscriptions
+    {"id":"subscribes","label":"Subscribes"},{"id":"start_trial","label":"Trials started"},
+    {"id":"contact_total","label":"Contact (total)"},{"id":"cost_per_contact","label":"Cost per Contact"},
+    {"id":"donate_total","label":"Donate (total)"},{"id":"cost_per_donate","label":"Cost per Donate"},
+    {"id":"find_location_total","label":"Find location (total)"},{"id":"cost_per_find_location","label":"Cost per Find location"},
+    {"id":"schedule_total","label":"Schedule (total)"},{"id":"cost_per_schedule","label":"Cost per Schedule"},
+    {"id":"submit_application_total","label":"Submit application (total)"},{"id":"cost_per_submit_application","label":"Cost per Submit application"},
+    {"id":"customize_product_total","label":"Customize product (total)"},{"id":"cost_per_customize_product","label":"Cost per Customize product"},
+    {"id":"cost_per_subscribe","label":"Cost per Subscribe"},{"id":"cost_per_start_trial","label":"Cost per Start trial"},
+    # Mobile app
+    {"id":"mobile_app_installs","label":"Mobile app installs"},
+    {"id":"cost_per_mobile_app_install","label":"Cost per mobile app install"},{"id":"cost_per_app_install","label":"Cost per app install"},
+    {"id":"mobile_app_purchases","label":"Mobile app purchases"},
+    {"id":"mobile_app_purchase_roas","label":"Mobile app purchase ROAS"},
+    {"id":"mobile_app_adds_to_cart","label":"Mobile app adds to cart"},
+    {"id":"mobile_app_checkouts","label":"Mobile app checkouts initiated"},
+    {"id":"mobile_app_registrations","label":"Mobile app registrations completed"},
+    {"id":"mobile_app_content_views","label":"Mobile app content views"},
+    {"id":"mobile_app_searches","label":"Mobile app searches"},
+    {"id":"mobile_app_sessions","label":"Mobile app sessions"},
+    {"id":"mobile_app_credits_spent","label":"Mobile app credits spent"},
+    {"id":"mobile_app_tutorials","label":"Mobile app tutorials completed"},
+    {"id":"mobile_app_achievements","label":"Mobile app achievements unlocked"},
+    {"id":"mobile_app_levels","label":"Mobile app levels completed"},
+    {"id":"mobile_app_ratings","label":"Mobile app ratings submitted"},
+    {"id":"mobile_app_adds_to_wishlist","label":"Mobile app adds to wishlist"},
+    {"id":"mobile_app_payment_info","label":"Mobile app adds of payment info"},
+    {"id":"cost_per_mobile_app_purchase","label":"Cost per mobile app purchase"},
+    {"id":"cost_per_mobile_app_action","label":"Cost per mobile app action"},
+    # Omni
+    {"id":"omni_adds_to_cart","label":"Omni adds to cart"},{"id":"omni_searches","label":"Omni searches"},
+    {"id":"omni_content_views","label":"Omni content views"},{"id":"omni_registrations","label":"Omni completed registrations"},
+    {"id":"omni_checkouts","label":"Omni initiated checkouts"},{"id":"omni_custom_actions","label":"Omni custom actions"},
+    # Offline
+    {"id":"offline_purchases","label":"Offline purchases"},{"id":"offline_purchase_value","label":"Offline purchases conversion value"},
+    {"id":"offline_adds_to_cart","label":"Offline adds to cart"},
+    {"id":"offline_leads","label":"Offline leads"},
+    {"id":"offline_registrations","label":"Offline registrations completed"},
+    {"id":"offline_checkouts","label":"Offline checkouts initiated"},
+    {"id":"offline_content_views","label":"Offline content views"},
+    {"id":"offline_searches","label":"Offline searches"},
+    {"id":"offline_adds_to_wishlist","label":"Offline adds to wishlist"},
+    {"id":"offline_payment_info","label":"Offline adds of payment info"},
+    # Store visits
+    {"id":"store_visits_low","label":"Store visits low estimate"},
+    {"id":"store_visits_point","label":"Store visits point estimate"},
+    {"id":"store_visits_high","label":"Store visits high estimate"},
+    {"id":"cost_per_store_visit","label":"Cost per store visit"},
+    # Quality/ranking
+    {"id":"quality_ranking","label":"Quality ranking"},
+    {"id":"engagement_rate_ranking","label":"Engagement Rate Ranking"},
+    {"id":"conversion_rate_ranking","label":"Conversion Rate Ranking"},
+    {"id":"relevance_score","label":"Relevance score"},
+    {"id":"people_taking_action","label":"People taking action"},
+    {"id":"people_taking_action_rate","label":"People taking action rate %"},
+]
+
+TIKTOK_INCOMPAT = [
+    # Audience não combina com ad level (Basic report)
+    ["audience","ad"],
+    # Audience não combina com geo detalhado
+    ["audience","geo"],
+    # Audience não combina com placement no mesmo breakdown
+    ["audience","placement"],
+    # TrueView/YouTube específico — não mistura com padrão
+    ["trueview","standard"],
+]
+
+TIKTOK_DIMENSIONS = [
+    {"id":"stat_time_day","label":"Date"},{"id":"hour","label":"Hour"},
+    {"id":"year","label":"Year"},{"id":"month","label":"Month"},
+    {"id":"day_of_week","label":"Day of week"},{"id":"year_month","label":"Year & month"},
+    {"id":"advertiser_id","label":"Advertiser ID"},{"id":"advertiser_name","label":"Advertiser name"},
+    {"id":"campaign_id","label":"Campaign ID"},{"id":"campaign_name","label":"Campaign name"},
+    {"id":"campaign_status","label":"Campaign status"},
+    {"id":"campaign_objective_type","label":"Campaign objective type"},
+    {"id":"campaign_budget","label":"Campaign budget"},{"id":"campaign_type","label":"Campaign type"},
+    {"id":"campaign_creation_date","label":"Campaign creation date"},
+    {"id":"adgroup_id","label":"Ad group ID","group":"adgroup"},
+    {"id":"adgroup_name","label":"Ad group name","group":"adgroup"},
+    {"id":"adgroup_status","label":"Ad group status","group":"adgroup"},
+    {"id":"optimization_goal","label":"Optimization goal","group":"adgroup"},
+    {"id":"bid_method","label":"Bid method","group":"adgroup"},
+    {"id":"bidding_strategy","label":"Bidding strategy","group":"adgroup"},
+    {"id":"pacing","label":"Pacing","group":"adgroup"},
+    {"id":"schedule_type","label":"Schedule type","group":"adgroup"},
+    {"id":"placement_type","label":"Placement type","group":"adgroup"},
+    {"id":"ad_group_budget","label":"Ad group budget","group":"adgroup"},
+    {"id":"ad_id","label":"Ad ID","group":"ad"},{"id":"ad_name","label":"Ad name","group":"ad"},
+    {"id":"ad_status","label":"Ad status","group":"ad"},
+    {"id":"ad_text","label":"Ad text","group":"ad"},
+    {"id":"display_name","label":"Display name","group":"ad"},
+    {"id":"call_to_action","label":"Call-to-action","group":"ad"},
+    {"id":"video_id","label":"Video ID","group":"ad"},
+    {"id":"image_mode","label":"Image mode","group":"ad"},
+    {"id":"creative_format","label":"Creative format","group":"ad"},
+    {"id":"landing_page_url","label":"Landing page URL","group":"ad"},
+    {"id":"profile_image_url","label":"Profile image URL","group":"ad"},
+    {"id":"video_thumbnail_url","label":"Video thumbnail URL","group":"ad"},
+    {"id":"post_id","label":"Post ID","group":"ad"},
+    {"id":"utm_source","label":"utm_source parameter value","group":"ad"},
+    {"id":"utm_medium","label":"utm_medium parameter value","group":"ad"},
+    {"id":"utm_campaign","label":"utm_campaign parameter value","group":"ad"},
+    {"id":"age","label":"Age","group":"audience"},{"id":"gender","label":"Gender","group":"audience"},
+    {"id":"language","label":"Language","group":"audience"},
+    {"id":"interest_category","label":"Interest category","group":"audience"},
+    {"id":"audience_type","label":"Audience type","group":"audience"},
+    {"id":"age_targeting","label":"Age targeting","group":"audience"},
+    {"id":"gender_targeting","label":"Gender targeting","group":"audience"},
+    {"id":"operating_system","label":"Operating system targeting","group":"audience"},
+    {"id":"connection_type","label":"Connection type","group":"audience"},
+    {"id":"country_code","label":"Country code","group":"geo"},
+    {"id":"country","label":"Country","group":"geo"},
+    {"id":"province_id","label":"Province ID","group":"geo"},
+    {"id":"province_name","label":"Province name","group":"geo"},
+    {"id":"dma_id","label":"DMA ID","group":"geo"},{"id":"dma_name","label":"DMA name","group":"geo"},
+    {"id":"device_platform","label":"Device platform","group":"device"},
+    {"id":"placement","label":"Placement","group":"placement"},
+    {"id":"ag_placement","label":"AG Placement","group":"placement"},
+    {"id":"pixel_id","label":"Pixel ID"},{"id":"conversion_event","label":"Conversion event"},
+    {"id":"promoted_app_name","label":"Promoted app name"},
+    {"id":"promoted_app_id","label":"Promoted app ID"},
+    {"id":"mobile_app_id","label":"Mobile app ID"},
+    {"id":"business_center_id","label":"Business center ID"},
+    {"id":"business_center_name","label":"Business center name"},
+    {"id":"advertiser_country","label":"Advertiser country"},
+    {"id":"advertiser_timezone","label":"Time zone"},
+    {"id":"advertiser_currency","label":"Currency"},
+]
+
+TIKTOK_METRICS = [
+    # Core
+    {"id":"impressions","label":"Impressions"},{"id":"reach","label":"Reach"},
+    {"id":"frequency","label":"Frequency"},{"id":"spend","label":"Cost"},
+    {"id":"cpm","label":"CPM"},{"id":"cpc","label":"CPC"},{"id":"ctr","label":"CTR"},
+    {"id":"clicks","label":"Clicks"},{"id":"clicks_all","label":"Clicks (All)"},
+    {"id":"cost_per_1000_reached","label":"Cost per 1,000 people reached"},
+    {"id":"result","label":"Results"},{"id":"result_rate","label":"Result rate"},
+    {"id":"cost_per_result","label":"Cost per result"},
+    {"id":"conversion","label":"Conversions"},{"id":"conversion_rate","label":"Conversion rate"},
+    {"id":"cost_per_conversion","label":"Cost per conversion"},
+    {"id":"real_time_result","label":"Real-time results"},
+    {"id":"real_time_result_rate","label":"Real-time result rate"},
+    {"id":"cost_per_real_time_result","label":"Cost per real-time result"},
+    {"id":"real_time_conversion","label":"Real-time conversions"},
+    {"id":"real_time_conversion_rate","label":"Real-time conversion rate"},
+    {"id":"cost_per_real_time_conversion","label":"Cost per real-time conversion"},
+    {"id":"secondary_goal_result","label":"Secondary goal result"},
+    {"id":"cost_per_secondary_goal_result","label":"Cost per secondary goal result"},
+    # Video
+    {"id":"video_play_actions","label":"Video views"},
+    {"id":"video_watched_2s","label":"2-second video views"},
+    {"id":"video_watched_6s","label":"6-second video views (focused view)"},
+    {"id":"video_watched_15s","label":"15-second video views (focused view)"},
+    {"id":"video_views_p25","label":"Video views at 25%"},
+    {"id":"video_views_p50","label":"Video views at 50%"},
+    {"id":"video_views_p75","label":"Video views at 75%"},
+    {"id":"video_views_p100","label":"Video views at 100%"},
+    {"id":"average_video_play","label":"Avg watch time per video view"},
+    {"id":"average_video_play_per_user","label":"Avg watch time per person"},
+    # Engagement
+    {"id":"profile_visits","label":"Profile visits"},
+    {"id":"likes","label":"Paid likes"},{"id":"comments","label":"Paid comments"},
+    {"id":"shares","label":"Paid shares"},{"id":"follows","label":"Paid follows"},
+    {"id":"sound_clicks","label":"Sound clicks"},
+    {"id":"use_sound_button_clicks","label":"Use sound button clicks"},
+    {"id":"duet_clicks","label":"Duet clicks"},{"id":"stitch_clicks","label":"Stitch clicks"},
+    {"id":"gmv_max_ads_spend","label":"GMV Max Ads spend"},
+    {"id":"gmv_max_ads_billed_cost","label":"GMV Max Ads billed cost"},
+    # Landing page / website
+    {"id":"total_landing_page_view","label":"Total landing page view"},
+    {"id":"cost_per_landing_page_view","label":"Cost per landing page view"},
+    {"id":"landing_page_view_rate","label":"Landing page view rate"},
+    {"id":"page_views_website","label":"Page views (website)"},
+    # Conversions - website
+    {"id":"complete_payment_roas","label":"Complete payment ROAS"},
+    {"id":"complete_payment","label":"Complete payment events"},
+    {"id":"total_complete_payment_value","label":"Total complete payment value"},
+    {"id":"add_to_cart_events","label":"Add to cart events"},
+    {"id":"total_add_to_cart_value","label":"Total add to cart value"},
+    {"id":"cost_per_add_to_cart","label":"Cost per add to cart"},
+    {"id":"checkout_initiations","label":"Checkout initiations"},
+    {"id":"total_initiate_checkout_value","label":"Total initiate checkout value"},
+    {"id":"form_submissions","label":"Form submissions"},
+    {"id":"total_form_submission_value","label":"Total form submission value"},
+    {"id":"user_registrations","label":"User registrations"},
+    {"id":"total_user_registration_value","label":"Total user registration value"},
+    {"id":"purchase_events","label":"Purchase events"},
+    {"id":"total_purchase_value","label":"Total purchase value"},
+    {"id":"place_an_order_events","label":"Place an order events"},
+    {"id":"total_place_an_order_value","label":"Total place an order value"},
+    {"id":"search_events","label":"Search events"},{"id":"total_search_value","label":"Total search value"},
+    {"id":"download_button_clicks","label":"Download button clicks"},
+    {"id":"page_browse_events","label":"Page browse events"},
+    {"id":"button_click_events","label":"Button click events"},
+    {"id":"total_button_click_value","label":"Total button click value"},
+    {"id":"online_consultation_events","label":"Online consultation events"},
+    {"id":"total_subscribe","label":"Total subscribe"},
+    {"id":"total_subscribe_value","label":"Total subscribe value"},
+    {"id":"cost_per_subscribe","label":"Cost per subscribe"},
+    {"id":"subscribe_rate","label":"Subscribe rate (%)"},
+    {"id":"add_to_wishlist_website","label":"Adds to wishlist (website)"},
+    # Onsite
+    {"id":"complete_payment_roas_onsite","label":"Complete payment ROAS (onsite)"},
+    {"id":"complete_payment_onsite","label":"Complete payment (onsite)"},
+    {"id":"total_complete_payment_value_onsite","label":"Total complete payment value (onsite)"},
+    {"id":"initiate_checkout_onsite","label":"Initiate checkout (onsite)"},
+    {"id":"product_details_page_view_onsite","label":"Product details page view (onsite)"},
+    {"id":"add_to_wishlist_onsite","label":"Add to wishlist (onsite)"},
+    {"id":"add_billing_onsite","label":"Add billing (onsite)"},
+    {"id":"add_to_cart_onsite","label":"Add to cart (onsite)"},
+    {"id":"cost_per_add_to_cart_onsite","label":"Cost per add to cart (onsite)"},
+    {"id":"form_submission_onsite","label":"Form submission (onsite)"},
+    {"id":"app_store_click_onsite","label":"App store click (onsite)"},
+    {"id":"total_page_views_onsite","label":"Total page views (onsite)"},
+    {"id":"cta_button_clicks_onsite","label":"Call-to-Action button clicks (onsite)"},
+    # App
+    {"id":"app_installs","label":"App installs"},
+    {"id":"real_time_app_installs","label":"Real-time app installs"},
+    {"id":"unique_registrations","label":"Unique registrations"},
+    {"id":"unique_purchases","label":"Unique purchases"},
+    {"id":"unique_adds_to_cart","label":"Unique adds to cart"},
+    {"id":"unique_checkouts","label":"Unique checkouts"},
+    {"id":"unique_content_views","label":"Unique content views"},
+    {"id":"unique_day2_retentions","label":"Unique day 2 retentions"},
+    {"id":"unique_payment_info_adds","label":"Unique payment info additions"},
+    {"id":"unique_adds_to_wishlist","label":"Unique adds to wishlist"},
+    {"id":"unique_app_launches","label":"Unique app launches"},
+    {"id":"unique_tutorial_completions","label":"Unique tutorial completions"},
+    {"id":"registrations_events","label":"Registrations events"},
+    {"id":"checkout_events","label":"Checkout events"},
+    {"id":"view_content_events","label":"View content events"},
+    {"id":"day2_retention_events","label":"Day 2 retention events"},
+    {"id":"add_payment_info_events","label":"Add payment info events"},
+    {"id":"launch_app_events","label":"Launch app events"},
+    {"id":"in_app_ad_clicks","label":"In-app ad clicks"},
+    {"id":"in_app_ad_impressions","label":"In-app ad impressions"},
+    {"id":"cost_per_add_to_cart_in_app","label":"Cost per add to cart (in app)"},
+    # VTA/CTA
+    {"id":"vta_conversions","label":"VTA conversions"},{"id":"vta_registrations","label":"VTA registrations"},
+    {"id":"vta_purchases","label":"VTA purchases"},{"id":"cta_conversions","label":"CTA conversions"},
+    {"id":"cta_registrations","label":"CTA registrations"},{"id":"cta_purchases","label":"CTA purchases"},
+    # SKAN
+    {"id":"app_installs_skan","label":"App Installs (SKAN)"},
+    {"id":"purchase_events_skan","label":"Purchase events (SKAN)"},
+    {"id":"total_purchase_value_skan","label":"Total purchase value (SKAN)"},
+    {"id":"add_to_cart_events_skan","label":"Add to cart events (SKAN)"},
+    {"id":"checkout_events_skan","label":"Checkout events (SKAN)"},
+    {"id":"result_skan","label":"Results (SKAN)"},{"id":"result_rate_skan","label":"Result rate (SKAN)"},
+    {"id":"cost_per_result_skan","label":"Cost per result (SKAN)"},
+    {"id":"conversions_skan","label":"Conversions (SKAN)"},
+    {"id":"conversion_rate_skan","label":"Conversion rate (SKAN)"},
+    {"id":"cost_per_conversion_skan","label":"Cost per conversion (SKAN)"},
+    # Offline
+    {"id":"purchases_offline","label":"Purchases (offline)"},
+    {"id":"cost_per_purchase_offline","label":"Cost per purchase (offline)"},
+    {"id":"purchase_value_offline","label":"Purchase value (offline)"},
+    {"id":"purchase_roas_offline","label":"Purchase ROAS (offline)"},
+    {"id":"contacts_offline","label":"Contacts (offline)"},
+    {"id":"form_submissions_offline","label":"Form submissions (offline)"},
+    {"id":"adds_to_cart_offline","label":"Adds to cart (offline)"},
+    {"id":"registrations_offline","label":"Registrations (offline)"},
+    {"id":"checkouts_offline","label":"Checkouts initiated (offline)"},
+    {"id":"custom_events_offline","label":"Custom events (offline)"},
+    {"id":"crm_events","label":"CRM events"},
+    {"id":"cost_per_crm_event","label":"Cost per CRM event"},
+    {"id":"crm_event_rate","label":"CRM event rate"},
+    {"id":"crm_event_value","label":"CRM event value"},
+    {"id":"subscriptions_offline","label":"Subscriptions (offline)"},
+    {"id":"downloads_offline","label":"Downloads (offline)"},
+    {"id":"orders_placed_offline","label":"Orders placed (offline)"},
+    {"id":"searches_offline","label":"Searches (offline)"},
+    {"id":"content_views_offline","label":"Content views (offline)"},
+    {"id":"preferred_leads_offline","label":"Preferred leads (offline)"},
+    {"id":"find_location_offline","label":"Total find location (offline)"},
+    {"id":"schedule_offline","label":"Total schedule (offline)"},
+    {"id":"customize_product_offline","label":"Total customize product (offline)"},
+    {"id":"button_clicks_offline","label":"Button clicks (offline)"},
+    # Currency variants
+    {"id":"cost_eur","label":"Cost (EUR)"},{"id":"cost_gbp","label":"Cost (GBP)"},
+    {"id":"cost_usd","label":"Cost (USD)"},
+]
+
+DV360_INCOMPAT = [
+    ["trueview","standard"],
+    ["trueview","geo"],
+    ["trueview","inventory"],
+    ["audience","inventory"],
+    ["audience","geo"],
+]
+
+DV360_DIMENSIONS = [
+    # Time
+    {"id":"FILTER_DATE","label":"Date"},
+    {"id":"FILTER_WEEK","label":"Week"},
+    {"id":"FILTER_MONTH","label":"Month"},
+    {"id":"FILTER_QUARTER","label":"Quarter"},
+    {"id":"FILTER_YEAR","label":"Year"},
+    {"id":"FILTER_DAY_OF_WEEK","label":"Day of Week"},
+    {"id":"FILTER_TIME_OF_DAY","label":"Time of Day"},
+    # Partner / Advertiser
+    {"id":"FILTER_PARTNER","label":"Partner ID"},
+    {"id":"FILTER_PARTNER_NAME","label":"Partner"},
+    {"id":"FILTER_PARTNER_STATUS","label":"Partner Status"},
+    {"id":"FILTER_PARTNER_CURRENCY","label":"Partner Currency"},
+    {"id":"FILTER_ADVERTISER","label":"Advertiser ID"},
+    {"id":"FILTER_ADVERTISER_NAME","label":"Advertiser"},
+    {"id":"FILTER_ADVERTISER_INTEGRATION_STATUS","label":"Advertiser Status"},
+    {"id":"FILTER_ADVERTISER_CURRENCY","label":"Advertiser Currency"},
+    {"id":"FILTER_ADVERTISER_TIMEZONE","label":"Advertiser Time Zone"},
+    # Campaign (FILTER_MEDIA_PLAN no Bid Manager API v2)
+    {"id":"FILTER_MEDIA_PLAN","label":"Campaign ID"},
+    {"id":"FILTER_MEDIA_PLAN_NAME","label":"Campaign"},
+    # Insertion Order
+    {"id":"FILTER_INSERTION_ORDER","label":"Insertion Order ID"},
+    {"id":"FILTER_INSERTION_ORDER_NAME","label":"Insertion Order"},
+    {"id":"FILTER_INSERTION_ORDER_STATUS","label":"Insertion Order Status"},
+    {"id":"FILTER_INSERTION_ORDER_GOAL_TYPE","label":"Insertion Order Goal Type"},
+    {"id":"FILTER_INSERTION_ORDER_INTEGRATION_CODE","label":"Insertion Order Integration Code"},
+    {"id":"FILTER_CAMPAIGN_DAILY_FREQUENCY","label":"Insertion Order Daily Frequency"},
+    # Line Item
+    {"id":"FILTER_LINE_ITEM","label":"Line Item ID"},
+    {"id":"FILTER_LINE_ITEM_NAME","label":"Line Item"},
+    {"id":"FILTER_LINE_ITEM_STATUS","label":"Line Item Status"},
+    {"id":"FILTER_LINE_ITEM_TYPE","label":"Line Item Type"},
+    {"id":"FILTER_LINE_ITEM_DAILY_FREQUENCY","label":"Line Item Daily Frequency"},
+    {"id":"FILTER_LINE_ITEM_LIFETIME_FREQUENCY","label":"Line Item Lifetime Frequency"},
+    {"id":"FILTER_LINE_ITEM_PACING_PERCENTAGE","label":"Line Item Pacing Percentage"},
+    {"id":"FILTER_LINE_ITEM_INTEGRATION_CODE","label":"Line Item Integration Code"},
+    # Creative
+    {"id":"FILTER_CREATIVE_ID","label":"Creative ID","group":"creative"},
+    {"id":"FILTER_CREATIVE","label":"Creative","group":"creative"},
+    {"id":"FILTER_CREATIVE_STATUS","label":"Creative Status","group":"creative"},
+    {"id":"FILTER_CREATIVE_SIZE","label":"Creative Size","group":"creative"},
+    {"id":"FILTER_CREATIVE_TYPE","label":"Creative Type","group":"creative"},
+    {"id":"FILTER_CREATIVE_SOURCE","label":"Creative Source","group":"creative"},
+    {"id":"FILTER_CREATIVE_WIDTH","label":"Creative Width","group":"creative"},
+    {"id":"FILTER_CREATIVE_HEIGHT","label":"Creative Height","group":"creative"},
+    {"id":"FILTER_CREATIVE_ATTRIBUTE","label":"Creative Attributes","group":"creative"},
+    {"id":"FILTER_CREATIVE_INTEGRATION_CODE","label":"Creative Integration Code","group":"creative"},
+    # Geography
+    {"id":"FILTER_COUNTRY","label":"Country","group":"geo"},
+    {"id":"FILTER_REGION","label":"Region ID","group":"geo"},
+    {"id":"FILTER_REGION_NAME","label":"Region","group":"geo"},
+    {"id":"FILTER_CITY","label":"City ID","group":"geo"},
+    {"id":"FILTER_CITY_NAME","label":"City","group":"geo"},
+    {"id":"FILTER_DMA","label":"DMA Code","group":"geo"},
+    {"id":"FILTER_DMA_NAME","label":"DMA","group":"geo"},
+    {"id":"FILTER_ZIP_CODE","label":"Zip Code ID","group":"geo"},
+    {"id":"FILTER_ZIP_POSTAL_CODE","label":"Zip Code","group":"geo"},
+    # Device
+    {"id":"FILTER_DEVICE_TYPE","label":"Device Type","group":"device"},
+    {"id":"FILTER_DEVICE_MAKE","label":"Device Make","group":"device"},
+    {"id":"FILTER_DEVICE_MODEL","label":"Device Model","group":"device"},
+    {"id":"FILTER_OS","label":"Operating System","group":"device"},
+    {"id":"FILTER_BROWSER","label":"Browser","group":"device"},
+    {"id":"FILTER_CARRIER_NAME","label":"ISP or Carrier","group":"device"},
+    {"id":"FILTER_PLATFORM","label":"Platform","group":"device"},
+    # Inventory
+    {"id":"FILTER_SITE_ID","label":"App/URL ID","group":"inventory"},
+    {"id":"FILTER_APP_URL","label":"App/URL","group":"inventory"},
+    {"id":"FILTER_DOMAIN","label":"Domain","group":"inventory"},
+    {"id":"FILTER_EXCHANGE_ID","label":"Exchange ID","group":"inventory"},
+    {"id":"FILTER_EXCHANGE","label":"Exchange","group":"inventory"},
+    {"id":"FILTER_INVENTORY_SOURCE_NAME","label":"Inventory Source","group":"inventory"},
+    {"id":"FILTER_INVENTORY_SOURCE_TYPE","label":"Inventory Source Type","group":"inventory"},
+    {"id":"FILTER_INVENTORY_FORMAT","label":"Format","group":"inventory"},
+    {"id":"FILTER_PAGE_LAYOUT","label":"Environment","group":"inventory"},
+    {"id":"FILTER_PAGE_CATEGORY","label":"Category","group":"inventory"},
+    {"id":"FILTER_DIGITAL_CONTENT_LABEL","label":"Digital Content Label"},
+    # Audience
+    {"id":"FILTER_AGE","label":"Age","group":"audience"},
+    {"id":"FILTER_GENDER","label":"Gender","group":"audience"},
+    {"id":"FILTER_AUDIENCE_LIST","label":"Audience List","group":"audience"},
+    # TrueView / YouTube
+    {"id":"FILTER_TRUEVIEW_AD_GROUP_ID","label":"YouTube Ad Group ID","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_AD_GROUP","label":"YouTube Ad Group","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_AD_GROUP_AD_ID","label":"YouTube Ad ID","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_AD","label":"YouTube Ad","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_AD_FORMAT","label":"YouTube Ad Format","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_AD_TYPE_NAME","label":"YouTube Ad Type","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_AGE","label":"Age (YouTube)","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_GENDER","label":"Gender (YouTube)","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_COUNTRY","label":"Country (YouTube)","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_REGION_NAME","label":"Region (YouTube)","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_DMA_NAME","label":"DMA (YouTube)","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_INTEREST","label":"Interest","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_KEYWORD","label":"Keyword (YouTube)","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_PLACEMENT","label":"Placement (Managed)","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_URL","label":"Placement (All)","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_REMARKETING_LIST_NAME","label":"Remarketing List","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_CUSTOM_AFFINITY","label":"Custom Affinity","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_DETAILED_DEMOGRAPHICS","label":"Detailed Demographics","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_PARENTAL_STATUS","label":"Parental Status","group":"trueview"},
+    {"id":"FILTER_TRUEVIEW_HOUSEHOLD_INCOME","label":"Household Income","group":"trueview"},
+    # Floodlight
+    {"id":"FILTER_FLOODLIGHT_ACTIVITY","label":"Floodlight Activity"},
+    {"id":"FILTER_FLOODLIGHT_ACTIVITY_ID","label":"Floodlight Activity ID"},
+    # Other
+    {"id":"FILTER_MEDIA_TYPE","label":"Media Type"},
+    {"id":"FILTER_AD_POSITION","label":"Ad Position"},
+    {"id":"FILTER_VIDEO_DURATION","label":"Video Duration"},
+    {"id":"FILTER_VIDEO_PLAYER_SIZE","label":"Video Player Size"},
+    {"id":"FILTER_KEYWORD","label":"Keyword"},
+    {"id":"FILTER_DATA_SOURCE","label":"Data Source"},
+    {"id":"FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID","label":"Unique Reach Sample Size"},
+    {"id":"FILTER_CHANNEL_NAME","label":"Channel"},
+    {"id":"FILTER_BID_STRATEGY_TYPE_NAME","label":"Bid Strategy Type"},
+]
+
+DV360_METRICS = [
+    # Core
+    {"id":"METRIC_IMPRESSIONS","label":"Impressions"},
+    {"id":"METRIC_CLICKS","label":"Clicks"},
+    {"id":"METRIC_CTR","label":"Click Rate (CTR)"},
+    {"id":"METRIC_BILLABLE_IMPRESSIONS","label":"Billable Impressions"},
+    # Media Cost
+    {"id":"METRIC_MEDIA_COST_ADVERTISER","label":"Media Cost (Advertiser Currency)"},
+    {"id":"METRIC_MEDIA_COST_USD","label":"Media Cost (USD)"},
+    {"id":"METRIC_MEDIA_COST_PARTNER","label":"Media Cost (Partner Currency)"},
+    {"id":"METRIC_TOTAL_MEDIA_COST_ADVERTISER","label":"Total Media Cost (Advertiser Currency)"},
+    {"id":"METRIC_TOTAL_MEDIA_COST_USD","label":"Total Media Cost (USD)"},
+    {"id":"METRIC_TOTAL_MEDIA_COST_PARTNER","label":"Total Media Cost (Partner Currency)"},
+    {"id":"METRIC_BILLABLE_COST_ADVERTISER","label":"Billable Cost (Advertiser Currency)"},
+    {"id":"METRIC_BILLABLE_COST_USD","label":"Billable Cost (USD)"},
+    {"id":"METRIC_REVENUE_ADVERTISER","label":"Revenue (Advertiser Currency)"},
+    {"id":"METRIC_REVENUE_USD","label":"Revenue (USD)"},
+    {"id":"METRIC_PROFIT_ADVERTISER","label":"Profit (Advertiser Currency)"},
+    {"id":"METRIC_PROFIT_USD","label":"Profit (USD)"},
+    {"id":"METRIC_PROFIT_MARGIN","label":"Profit Margin"},
+    # eCPM / eCPC / eCPA
+    {"id":"METRIC_MEDIA_COST_ECPM_ADVERTISER","label":"Media Cost eCPM (Advertiser Currency)"},
+    {"id":"METRIC_MEDIA_COST_ECPC_ADVERTISER","label":"Media Cost eCPC (Advertiser Currency)"},
+    {"id":"METRIC_MEDIA_COST_ECPA_ADVERTISER","label":"Media Cost eCPA (Advertiser Currency)"},
+    {"id":"METRIC_REVENUE_ECPM_ADVERTISER","label":"Revenue eCPM (Advertiser Currency)"},
+    {"id":"METRIC_REVENUE_ECPC_ADVERTISER","label":"Revenue eCPC (Advertiser Currency)"},
+    {"id":"METRIC_REVENUE_ECPA_ADVERTISER","label":"Revenue eCPA (Advertiser Currency)"},
+    # Conversions
+    {"id":"METRIC_TOTAL_CONVERSIONS","label":"Total Conversions"},
+    {"id":"METRIC_LAST_CLICKS","label":"Post-Click Conversions"},
+    {"id":"METRIC_LAST_IMPRESSIONS","label":"Post-View Conversions"},
+    {"id":"METRIC_CONVERSIONS_PER_MILLE","label":"Conversions per 1000 Impressions"},
+    {"id":"METRIC_CLICK_TO_POST_CLICK_CONVERSION_RATE","label":"% Clicks Leading to Conversions"},
+    {"id":"METRIC_IMPRESSIONS_TO_CONVERSION_RATE","label":"% Impressions Leading to Conversions"},
+    {"id":"METRIC_FLOODLIGHT_IMPRESSIONS","label":"Floodlight Impressions"},
+    # Active View
+    {"id":"METRIC_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS","label":"Active View: Viewable Impressions"},
+    {"id":"METRIC_ACTIVE_VIEW_ELIGIBLE_IMPRESSIONS","label":"Active View: Eligible Impressions"},
+    {"id":"METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS","label":"Active View: Measurable Impressions"},
+    {"id":"METRIC_ACTIVE_VIEW_PCT_VIEWABLE_IMPRESSIONS","label":"Active View: % Viewable Impressions"},
+    {"id":"METRIC_ACTIVE_VIEW_PCT_MEASURABLE_IMPRESSIONS","label":"Active View: % Measurable Impressions"},
+    {"id":"METRIC_ACTIVE_VIEW_AVERAGE_VIEWABLE_TIME","label":"Active View: Average Viewable Time (Seconds)"},
+    {"id":"METRIC_ACTIVE_VIEW_DISTRIBUTION_VIEWABLE","label":"Active View: Impression Distribution (Viewable)"},
+    {"id":"METRIC_ACTIVE_VIEW_PERCENT_VISIBLE_AT_START","label":"Active View: % Visible at Start"},
+    {"id":"METRIC_ACTIVE_VIEW_PERCENT_VISIBLE_ON_COMPLETE","label":"Active View: % Visible at Completion"},
+    # Video
+    {"id":"METRIC_RICH_MEDIA_VIDEO_PLAYS","label":"Video Starts"},
+    {"id":"METRIC_RICH_MEDIA_VIDEO_COMPLETIONS","label":"Video Completions"},
+    {"id":"METRIC_RICH_MEDIA_VIDEO_FIRST_QUARTILE_COMPLETES","label":"Video 1st Quartile"},
+    {"id":"METRIC_RICH_MEDIA_VIDEO_MIDPOINTS","label":"Video Midpoint"},
+    {"id":"METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES","label":"Video 3rd Quartile"},
+    {"id":"METRIC_VIDEO_COMPLETION_RATE","label":"Video Completion Rate"},
+    {"id":"METRIC_RICH_MEDIA_VIDEO_PAUSES","label":"Video Pauses"},
+    {"id":"METRIC_RICH_MEDIA_VIDEO_MUTES","label":"Video Mutes"},
+    {"id":"METRIC_RICH_MEDIA_VIDEO_FULL_SCREENS","label":"Video Full Screens"},
+    {"id":"METRIC_RICH_MEDIA_VIDEO_SKIPS","label":"Video Skips"},
+    {"id":"METRIC_AVERAGE_WATCH_TIME_PER_IMPRESSION","label":"Average Watch Time per Impression (seconds)"},
+    # Engagement
+    {"id":"METRIC_RICH_MEDIA_ENGAGEMENTS","label":"Rich Media Engagements"},
+    {"id":"METRIC_ENGAGEMENT_RATE","label":"Engagement Rate"},
+    {"id":"METRIC_RICH_MEDIA_EXPANSIONS","label":"Expansions"},
+    {"id":"METRIC_INTERACTIVE_IMPRESSIONS","label":"Interactive Impressions"},
+    {"id":"METRIC_VIDEO_COMPANION_CLICKS","label":"Companion Clicks (Video)"},
+    {"id":"METRIC_VIDEO_COMPANION_IMPRESSIONS","label":"Companion Views (Video)"},
+    # TrueView / YouTube
+    {"id":"METRIC_TRUEVIEW_VIEWS","label":"TrueView: Views","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_VIEW_RATE","label":"TrueView: View Rate","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_CPV_ADVERTISER","label":"Revenue eCPV (Advertiser Currency)","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_AVERAGE_CPE_ADVERTISER","label":"Revenue eCPE (Advertiser Currency)","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_CONVERSION_MANY_PER_VIEW","label":"Conversions (TrueView)","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_CONVERSION_COST_MANY_PER_VIEW_ADVERTISER","label":"Cost / Conversion (Advertiser Currency)","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_CONVERSION_RATE_ONE_PER_VIEW","label":"View Conversion Rate","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_VIEW_THROUGH_CONVERSION","label":"View through Conversion","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_EARNED_VIEWS","label":"Earned Views","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_EARNED_LIKES","label":"Earned Likes","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_EARNED_SHARES","label":"Earned Shares","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_EARNED_SUBSCRIBERS","label":"Earned Subscribers","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_EARNED_PLAYLIST_ADDITIONS","label":"Earned Playlist Additions","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_ENGAGEMENTS","label":"Engagements (YouTube)","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_ENGAGEMENT_RATE","label":"Engagement Rate (YouTube)","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_IMPRESSION_SHARE","label":"Impression Share","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_LOST_IS_BUDGET","label":"Lost Impression Share (Budget)","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_LOST_IS_RANK","label":"Lost Impression Share (Rank)","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_UNIQUE_VIEWERS","label":"Unique Viewers","group":"trueview"},
+    {"id":"METRIC_TRUEVIEW_TOTAL_CONVERSION_VALUES_ADVERTISER","label":"Total Conversion Value (Advertiser Currency)","group":"trueview"},
+    # Unique Reach
+    {"id":"METRIC_UNIQUE_REACH_TOTAL_REACH","label":"Unique Reach: Total Reach"},
+    {"id":"METRIC_UNIQUE_REACH_IMPRESSION_REACH","label":"Unique Reach: Impression Reach"},
+    {"id":"METRIC_UNIQUE_REACH_AVERAGE_IMPRESSION_FREQUENCY","label":"Unique Reach: Average Impression Frequency"},
+    {"id":"METRIC_UNIQUE_REACH_CLICK_REACH","label":"Unique Reach: Click Reach"},
+    {"id":"METRIC_UNIQUE_REACH_INCREMENTAL_IMPRESSION_REACH","label":"Unique Reach: Incremental Impression Reach"},
+    {"id":"METRIC_UNIQUE_REACH_INCREMENTAL_TOTAL_REACH","label":"Unique Reach: Incremental Total Reach"},
+    {"id":"METRIC_COOKIE_REACH_IMPRESSION_REACH","label":"Cookie Reach: Impression Reach"},
+    {"id":"METRIC_COOKIE_REACH_AVERAGE_IMPRESSION_FREQUENCY","label":"Cookie Reach: Average Impression Frequency"},
+    {"id":"METRIC_COST_PER_UNIQUE_IMPRESSION_REACH_ADVERTISER","label":"Unique Reach: Cost per Unique Impression Reach (Advertiser Currency)"},
+    # Fees
+    {"id":"METRIC_PLATFORM_FEE_ADVERTISER","label":"Platform Fee (Advertiser Currency)"},
+    {"id":"METRIC_PLATFORM_FEE_USD","label":"Platform Fee (USD)"},
+    {"id":"METRIC_PLATFORM_FEE_RATE","label":"Platform Fee Rate"},
+    {"id":"METRIC_DATA_COST_ADVERTISER","label":"Data Fees (Advertiser Currency)"},
+    {"id":"METRIC_DATA_COST_USD","label":"Data Fees (USD)"},
+    {"id":"METRIC_FEE2_ADVERTISER","label":"Third-Party Ad Server Fee (Advertiser Currency)"},
+    {"id":"METRIC_FEE3_ADVERTISER","label":"DoubleVerify Fee (Advertiser Currency)"},
+    {"id":"METRIC_FEE10_ADVERTISER","label":"Agency Trading Desk Fee (Advertiser Currency)"},
+    {"id":"METRIC_FEE11_ADVERTISER","label":"Data Management Platform Fee (Advertiser Currency)"},
+    {"id":"METRIC_FEE12_ADVERTISER","label":"Integral Ad Science Pre-Bid Fee (Advertiser Currency)"},
+    {"id":"METRIC_FEE13_ADVERTISER","label":"DoubleVerify Pre-Bid Fee (Advertiser Currency)"},
+    {"id":"METRIC_CPM_FEE1_ADVERTISER","label":"CPM Fee 1 (Advertiser Currency)"},
+    {"id":"METRIC_CPM_FEE2_ADVERTISER","label":"CPM Fee 2 (Advertiser Currency)"},
+    {"id":"METRIC_MEDIA_FEE1_ADVERTISER","label":"Media Fee 1 (Advertiser Currency)"},
+    {"id":"METRIC_MEDIA_FEE2_ADVERTISER","label":"Media Fee 2 (Advertiser Currency)"},
+    {"id":"METRIC_FEE32_ADVERTISER","label":"Regulatory Operating Costs (Advertiser Currency)"},
+    # Audio
+    {"id":"METRIC_STARTS_AUDIO","label":"Starts (Audio)"},
+    {"id":"METRIC_FIRST_QUARTILE_AUDIO","label":"First-Quartile (Audio)"},
+    {"id":"METRIC_MIDPOINT_AUDIO","label":"Midpoint (Audio)"},
+    {"id":"METRIC_THIRD_QUARTILE_AUDIO","label":"Third-Quartile (Audio)"},
+    {"id":"METRIC_COMPLETE_LISTENS_AUDIO","label":"Complete Listens (Audio)"},
+    {"id":"METRIC_COMPLETION_RATE_AUDIO","label":"Completion Rate (Audio)"},
+    # Misc
+    {"id":"METRIC_BID_REQUESTS","label":"Potential Impressions"},
+    {"id":"METRIC_CM360_POST_CLICK_REVENUE","label":"CM360 Post-Click Revenue"},
+    {"id":"METRIC_CM360_POST_VIEW_REVENUE","label":"CM360 Post-View Revenue"},
+    {"id":"METRIC_STORE_VISIT_CONVERSIONS","label":"Store Visit Conversions"},
+    {"id":"METRIC_AVERAGE_IMPRESSION_FREQUENCY_PER_USER","label":"Average Impression Frequency per User"},
+]
+
+STATIC = {
+    "tiktok": {
+        "dimensions": TIKTOK_DIMENSIONS,
+        "metrics": TIKTOK_METRICS,
+        "incompat": TIKTOK_INCOMPAT
+    },
+    "dv360": {
+        "dimensions": DV360_DIMENSIONS,
+        "metrics": DV360_METRICS,
+        "incompat": DV360_INCOMPAT
+    },
+    "kwai": {
+        "dimensions": [
+            {"id":"date","label":"Date"},{"id":"advertiser_id","label":"Advertiser ID"},
+            {"id":"campaign_id","label":"Campaign ID"},{"id":"campaign_name","label":"Campaign name"},
+            {"id":"unit_id","label":"Ad Group ID","group":"adgroup"},{"id":"unit_name","label":"Ad Group name","group":"adgroup"},
+            {"id":"creative_id","label":"Creative ID","group":"ad"},{"id":"creative_name","label":"Creative name","group":"ad"},
+            {"id":"country","label":"Country","group":"geo"},
+            {"id":"age","label":"Age","group":"audience"},{"id":"gender","label":"Gender","group":"audience"},
+        ],
+        "metrics": [
+            {"id":"show","label":"Impressions"},{"id":"click","label":"Clicks"},{"id":"charge","label":"Spend"},
+            {"id":"avcpm","label":"CPM"},{"id":"ctr","label":"CTR"},{"id":"cpc","label":"CPC"},
+            {"id":"play_count","label":"Video Plays"},{"id":"play_3s_count","label":"3s Video Views"},
+            {"id":"play_end_count","label":"Video Completions"},{"id":"comment_count","label":"Comments"},
+            {"id":"like_count","label":"Likes"},{"id":"share_count","label":"Shares"},{"id":"follow_count","label":"Follows"},
+            {"id":"form_count","label":"Form Submissions"},{"id":"conversion_count","label":"Conversions"},
+            {"id":"cost_per_convert","label":"Cost per Conversion"},
+        ],
+        "incompat": [["audience","geo"],["ad","audience"]]
+    }
+}
+
 
 class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        body = self._body()
-        tid  = body.get("transfer_id")
-        slot_time   = body.get("slot_time")
-        custom_start = body.get("date_start")
-        custom_end   = body.get("date_end")
-        is_backfill  = body.get("backfill", False)
-
-        if tid:
-            transfers = [get_transfer_full(tid)]
+    def do_GET(self):
+        qs = parse_qs(urlparse(self.path).query)
+        platform = qs.get("platform", [""])[0]
+        if not platform:
+            self._j({"error": "platform required"}, 400); return
+        if platform == "meta":
+            self._j({"dimensions": META_DIMENSIONS, "metrics": META_METRICS,
+                     "incompat": META_INCOMPAT, "source": "static"})
         else:
-            transfers = [get_transfer_full(t["id"]) for t in list_transfers() if t["active"]]
-
-        results = []
-        for tr in transfers:
-            if not tr: continue
-            slots = tr.get("slots") or [{"time":"00:00","window":3,"type":"daily"}]
-            slot = next((s for s in slots if s.get("time")==slot_time), slots[0]) if slot_time else slots[0]
-            results.append(run_transfer(tr, slot, custom_start=custom_start, custom_end=custom_end, is_backfill=is_backfill))
-
-        self._j({"results": results})
-
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin","*")
-        self.send_header("Access-Control-Allow-Methods","POST,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers","Content-Type")
-        self.end_headers()
-
-    def _body(self):
-        n = int(self.headers.get("Content-Length",0))
-        return json.loads(self.rfile.read(n)) if n else {}
+            self._j(STATIC.get(platform, {"error": "unknown platform"}))
 
     def _j(self, data, status=200):
         b = json.dumps(data, default=str).encode()
         self.send_response(status)
-        self.send_header("Content-Type","application/json")
-        self.send_header("Access-Control-Allow-Origin","*")
-        self.end_headers(); self.wfile.write(b)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(b)
 
 app = handler
-
-# ── EXECUTOR ─────────────────────────────────────────────────────────────────
-
-def run_transfer(tr, slot, custom_start=None, custom_end=None, is_backfill=False):
-    t0 = time.time()
-    tid = tr["id"]
-    platform = tr["platform"]
-    token = get_token(platform)
-
-    if not token:
-        update_transfer_run(tid, "skipped", 0)
-        return {"transfer_id":tid,"status":"skipped","reason":"not_connected"}
-
-    if not tr.get("bq_project"):
-        update_transfer_run(tid, "error", 0)
-        return {"transfer_id":tid,"status":"error","error":"Destino BQ não configurado"}
-
-    try:
-        bq = get_bq_client(tr["service_account"], tr["bq_project"])
-    except Exception as e:
-        update_transfer_run(tid, "error", 0)
-        return {"transfer_id":tid,"status":"error","error":f"BQ auth: {e}"}
-
-    # Janela de datas — usa customizada (backfill) ou baseada no slot
-    if custom_start and custom_end:
-        date_start = custom_start
-        date_end   = custom_end
-    else:
-        window = int(slot.get("window", 3))
-        date_end   = datetime.today().strftime("%Y-%m-%d")
-        date_start = (datetime.today() - timedelta(days=window)).strftime("%Y-%m-%d")
-
-    # Filtra contas
-    all_accounts  = token["account_ids"] or []
-    selected_ids  = {(a["id"] if isinstance(a,dict) else str(a)) for a in (tr["account_ids"] or [])}
-    accounts = [a for a in all_accounts if (a["id"] if isinstance(a,dict) else str(a)) in selected_ids] if selected_ids else all_accounts
-
-    tables = list_tables(tr["group_id"]) if tr.get("group_id") else []
-    if not tables:
-        update_transfer_run(tid, "error", 0)
-        return {"transfer_id":tid,"status":"error","error":"Sem tabelas no grupo"}
-
-    total_rows = 0
-    table_results = []
-
-    for tbl in tables:
-        t1 = time.time()
-        try:
-            print(f"[SYNC] Buscando dados: {tbl['bq_table']} | contas: {len(accounts)} | {date_start} -> {date_end}")
-            rows = fetch_platform(platform, token, accounts, tbl, date_start, date_end)
-            print(f"[SYNC] Linhas buscadas: {len(rows)}")
-            n = upsert_bq(bq, tr["bq_project"], tr["bq_dataset"], tbl["bq_table"], rows)
-            ms = int((time.time()-t1)*1000)
-            print(f"[SYNC] BQ ok: {n} linhas em {ms}ms")
-            total_rows += n
-            add_log(tid, tbl["bq_table"], slot.get("time","—"), "ok", n, None, ms)
-            table_results.append({"table":tbl["bq_table"],"rows":n,"status":"ok"})
-        except Exception as e:
-            import traceback
-            err_detail = traceback.format_exc()
-            print(f"[SYNC ERROR] {tbl['bq_table']}: {err_detail}")
-            ms = int((time.time()-t1)*1000)
-            add_log(tid, tbl["bq_table"], slot.get("time","—"), "error", 0, str(e), ms)
-            table_results.append({"table":tbl["bq_table"],"status":"error","error":str(e)})
-
-    status = "ok" if all(r["status"]=="ok" for r in table_results) else "partial"
-    errors = [r.get("error","") for r in table_results if r.get("status")=="error"]
-    error_msg = " | ".join(errors) if errors else None
-    update_transfer_run(tid, status, total_rows)
-    return {"transfer_id":tid,"status":status,"total_rows":total_rows,
-            "tables":table_results,"duration_ms":int((time.time()-t0)*1000)}
-
-# ── FETCHERS ─────────────────────────────────────────────────────────────────
-
-# Campos que vêm dentro do array "actions" na Meta API — não podem ir no fields= direto
-META_ACTIONS_MAP = {
-    "landing_page_views":    ("actions", "landing_page_view"),
-    "inline_link_clicks":    ("actions", "link_click"),
-    "outbound_clicks":       ("actions", "outbound_click"),
-    "purchase":              ("actions", "purchase"),
-    "lead":                  ("actions", "lead"),
-    "complete_registration": ("actions", "complete_registration"),
-    "add_to_cart":           ("actions", "add_to_cart"),
-    "initiate_checkout":     ("actions", "initiate_checkout"),
-    "add_payment_info":      ("actions", "add_payment_info"),
-    "view_content":          ("actions", "view_content"),
-    "search":                ("actions", "search"),
-    "subscribe":             ("actions", "subscribe"),
-    "start_trial":           ("actions", "start_trial"),
-    "mobile_app_install":    ("actions", "app_install"),
-    "video_view":            ("actions", "video_view"),
-    "contact":               ("actions", "contact"),
-    "donate":                ("actions", "donate"),
-    "find_location":         ("actions", "find_location"),
-    "schedule":              ("actions", "schedule"),
-    "submit_application":    ("actions", "submit_application"),
-    "customize_product":     ("actions", "customize_product"),
-    # Vídeo — vêm como arrays próprios com action_type="video_view"
-    "video_thruplay_watched_actions":          ("video_thruplay_watched_actions", "video_view"),
-    "video_30_sec_watched_actions":            ("video_30_sec_watched_actions", "video_view"),
-    "video_p25_watched_actions":               ("video_p25_watched_actions", "video_view"),
-    "video_p50_watched_actions":               ("video_p50_watched_actions", "video_view"),
-    "video_p75_watched_actions":               ("video_p75_watched_actions", "video_view"),
-    "video_p95_watched_actions":               ("video_p95_watched_actions", "video_view"),
-    "video_p100_watched_actions":              ("video_p100_watched_actions", "video_view"),
-    "video_continuous_2_sec_watched_actions":  ("video_continuous_2_sec_watched_actions", "video_view"),
-    "video_avg_time_watched_actions":          ("video_avg_time_watched_actions", "video_view"),
-}
-
-def extract_action_value(data_row, arr_field, action_type_key):
-    """Extrai valor de um action_type específico do array indicado."""
-    arr = data_row.get(arr_field, [])
-    if isinstance(arr, list):
-        for item in arr:
-            if isinstance(item, dict) and item.get("action_type") == action_type_key:
-                try: return float(item.get("value", 0))
-                except: return 0
-    return None
-
-def fetch_platform(platform, token, accounts, tbl, date_start, date_end):
-    return {"meta":fetch_meta,"tiktok":fetch_tiktok,"dv360":fetch_dv360,"kwai":fetch_kwai}[platform](
-        token, accounts, tbl, date_start, date_end)
-
-def fetch_meta(token, accounts, tbl, date_start, date_end):
-    dims = tbl.get("dimensions",[])
-    mets = tbl.get("metrics",[])
-
-    # Auto-detecta level baseado nas dimensões selecionadas
-    AD_DIMS    = {"ad_id","ad_name","ad_creative_id","ad_creative_name","creative_id","creative_name"}
-    ADSET_DIMS = {"adset_id","adset_name"}
-    if any(d in AD_DIMS for d in dims):
-        level = "ad"
-    elif any(d in ADSET_DIMS for d in dims):
-        level = "adset"
-    else:
-        level = "campaign"
-
-    # Campos que NÃO vão no params fields= da insights API
-    # São campos de nível de objeto (ad/adset/campaign) ou inválidos no insights
-    NON_INSIGHTS_FIELDS = {
-        "account_id","account_name","campaign_id","campaign_name",
-        "adset_id","adset_name","ad_id","ad_name",
-        "ad_creative_id","ad_creative_name","creative_id","creative_name",
-        "ad_title","ad_body","ad_status","ad_configured_status",
-        "adset_status","adset_configured_status","campaign_status","campaign_configured_status",
-        "campaign_objective","campaign_buying_type","bid_type","bid_amount","bid_strategy",
-        "optimization_goal","daily_budget","lifetime_budget","targeting",
-        "targeting_age_min","targeting_age_max","targeting_country","targeting_location_type",
-        "page_id","page_name","post_id","post_type","post_name","product_id",
-        "quality_ranking","engagement_rate_ranking","conversion_rate_ranking",
-        "attribution_setting","account_currency","account_timezone",
-        "data_source","business_name","destination_url","promoted_post_url",
-        "external_destination_url","url_tags","tracking_template",
-        "image_url","thumbnail_url","object_type","call_to_action_type",
-        "year","month","quarter","week","year_month","hour",
-        "action_type","day_of_week",
-    }
-
-    # Campos de breakdowns (passados via params["breakdowns"])
-    BREAKDOWN_FIELDS = {
-        "age","gender","country","region","country_code",
-        "publisher_platform","platform_position","impression_device","device_platform",
-    }
-
-    # Campos de lead form (incompatíveis com métricas normais)
-    LEAD_FIELDS = {"lead_form_id","lead_form_name","lead_form_status"}
-
-    has_lead = any(d in LEAD_FIELDS for d in dims)
-
-    # Monta lista de fields para a API de insights
-    insights_fields = []
-    breakdown_dims = []
-
-    for f in dims + mets:
-        if f in NON_INSIGHTS_FIELDS:
-            continue
-        elif f in BREAKDOWN_FIELDS:
-            breakdown_dims.append(f)
-        elif f in LEAD_FIELDS:
-            if has_lead:
-                insights_fields.append(f)
-        else:
-            insights_fields.append(f)
-
-    # Remove duplicatas mantendo ordem
-    insights_fields = list(dict.fromkeys(insights_fields))
-    breakdown_dims = list(dict.fromkeys(breakdown_dims))
-
-    # Campos de hierarquia — sempre inclui baseado no level
-    HIERARCHY_FIELDS = ["campaign_id","campaign_name"]
-    if level in ("adset","ad"):
-        HIERARCHY_FIELDS += ["adset_id","adset_name"]
-    if level == "ad":
-        HIERARCHY_FIELDS += ["ad_id","ad_name"]
-
-    # Garante que campos de hierarquia estão nos insights_fields
-    for f in HIERARCHY_FIELDS:
-        if f not in insights_fields:
-            insights_fields.insert(0, f)
-
-    if not insights_fields:
-        insights_fields = ["impressions","spend","clicks","cpm","ctr","reach"]
-
-    # Separa campos que vêm de actions dos campos diretos da API
-    action_fields = [f for f in insights_fields if f in META_ACTIONS_MAP]
-    direct_fields = [f for f in insights_fields if f not in META_ACTIONS_MAP]
-
-    # Se tem campos de actions, adiciona os arrays necessários no request
-    if action_fields:
-        needed_arrays = set()
-        for f in action_fields:
-            arr_field, _ = META_ACTIONS_MAP[f]
-            needed_arrays.add(arr_field)
-        for arr in needed_arrays:
-            if arr not in direct_fields:
-                direct_fields.append(arr)
-        if "action_values" not in direct_fields:
-            direct_fields.append("action_values")
-
-    api_fields = direct_fields
-
-    rows = []
-    # Processa em batches de 10 contas por vez para não estourar timeout
-    BATCH_SIZE = 10
-    for i in range(0, len(accounts), BATCH_SIZE):
-        batch = accounts[i:i+BATCH_SIZE]
-        
-        # Monta batch request da Meta API
-        batch_requests = []
-        for acc in batch:
-            acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
-            import urllib.parse
-            p = {
-                "level": level,
-                "fields": ",".join(api_fields),
-                "time_range": json.dumps({"since":date_start,"until":date_end}),
-                "time_increment": 1,
-                "limit": 500
-            }
-            if breakdown_dims:
-                p["breakdowns"] = ",".join(breakdown_dims)
-            batch_requests.append({
-                "method": "GET",
-                "relative_url": f"{acc_id}/insights?{urllib.parse.urlencode(p)}"
-            })
-
-        resp = requests.post(
-            "https://graph.facebook.com/v19.0/",
-            params={"access_token": token["access_token"]},
-            json={"batch": batch_requests},
-            timeout=55
-        )
-        batch_results = resp.json()
-        if isinstance(batch_results, dict) and "error" in batch_results:
-            raise Exception(f"Meta Batch API: {batch_results['error']['message']}")
-
-        for idx, result in enumerate(batch_results):
-            if not result or result.get("code") != 200:
-                continue
-            acc = batch[idx]
-            acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
-            acc_name = acc.get("name","") if isinstance(acc,dict) else ""
-            body = json.loads(result.get("body","{}"))
-            if "error" in body:
-                print(f"[SYNC] Conta {acc_id} erro: {body['error']['message']}")
-                continue
-            for d in body.get("data",[]):
-                row = {
-                    "date": d.get("date_start",""),
-                    "platform": "facebook ads",
-                    "account_id": acc_id,
-                    "account_name": acc_name,
-                }
-                # Adiciona campos de hierarquia baseado no level
-                for hf in HIERARCHY_FIELDS:
-                    v = d.get(hf,"")
-                    if v: row[hf] = v
-                for f in direct_fields:
-                    if f in ("actions","action_values","date_start","date_stop"): continue
-                    v = d.get(f)
-                    if isinstance(v, list) and v and isinstance(v[0], dict):
-                        try: row[f] = float(v[0].get("value", 0))
-                        except: row[f] = 0
-                    elif v is not None:
-                        try:
-                            fv = float(v)
-                            row[f] = int(fv) if fv == int(fv) else fv
-                        except: row[f] = v
-                # Extrai campos de actions
-                for f in action_fields:
-                    arr_field, action_type = META_ACTIONS_MAP[f]
-                    v = extract_action_value(d, arr_field, action_type)
-                    row[f] = int(v) if v is not None and isinstance(v, float) and v == int(v) else (v or 0)
-                for bd in breakdown_dims:
-                    if bd in d:
-                        row[bd] = d[bd]
-                rows.append(row)
-    return rows
-
-def fetch_tiktok(token, accounts, tbl, date_start, date_end):
-    dims = tbl.get("dimensions",[])
-    mets = tbl.get("metrics",[])
-    breakdown = tbl.get("breakdown","campaign")
-    level_dim = {"campaign":"campaign_id","adgroup":"adgroup_id","ad":"ad_id"}.get(breakdown,"campaign_id")
-    all_dims = list(dict.fromkeys(["stat_time_day",level_dim]+[d for d in dims if d not in ["stat_time_day",level_dim]]))
-    rows = []
-    headers = {"Access-Token":token["access_token"]}
-    for acc in accounts:
-        acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
-        params = {"advertiser_id":acc_id,"report_type":"BASIC","dimensions":json.dumps(all_dims),
-                  "metrics":json.dumps(mets or ["impressions","clicks","spend","cpm","ctr"]),
-                  "start_date":date_start,"end_date":date_end,"page_size":1000}
-        resp = requests.get("https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/",
-                            headers=headers,params=params)
-        data = resp.json()
-        if data.get("code",0)!=0: raise Exception(f"TikTok API: {data.get('message')}")
-        for item in data.get("data",{}).get("list",[]):
-            d=item.get("dimensions",{}); m=item.get("metrics",{})
-            row={"date":d.get("stat_time_day","")[:10],"platform":"tiktok ads","account_id":acc_id}
-            row.update(d); row.update(m); rows.append(row)
-    return rows
-
-def fetch_dv360(token, accounts, tbl, date_start, date_end):
-    dims = tbl.get("dimensions",["FILTER_DATE","FILTER_INSERTION_ORDER","FILTER_LINE_ITEM"])
-    mets = tbl.get("metrics",["METRIC_IMPRESSIONS","METRIC_CLICKS","METRIC_REVENUE_ADVERTISER"])
-    import time as _t
-
-    # Refresh do token se necessário (o token pode ter expirado)
-    access_token = token['access_token']
-    refresh_token = token.get('refresh_token')
-    if refresh_token:
-        try:
-            r = requests.post("https://oauth2.googleapis.com/token", data={
-                "client_id": os.environ.get("GOOGLE_CLIENT_ID",""),
-                "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET",""),
-                "refresh_token": refresh_token,
-                "grant_type": "refresh_token"
-            })
-            new_tok = r.json()
-            if "access_token" in new_tok:
-                access_token = new_tok["access_token"]
-                print(f"[DV360] Token refreshed OK")
-            else:
-                print(f"[DV360] Token refresh falhou: {new_tok}")
-        except Exception as e:
-            print(f"[DV360] Token refresh erro: {e}")
-
-    # Bid Manager exige FILTER_ADVERTISER_CURRENCY quando há métricas de custo em moeda do anunciante
-    COST_METRICS = {
-        "METRIC_MEDIA_COST_ADVERTISER","METRIC_TOTAL_MEDIA_COST_ADVERTISER",
-        "METRIC_REVENUE_ADVERTISER","METRIC_BILLABLE_COST_ADVERTISER",
-        "METRIC_PROFIT_ADVERTISER","METRIC_MEDIA_COST_ECPM_ADVERTISER",
-        "METRIC_CPM_FEE1_ADVERTISER","METRIC_PLATFORM_FEE_ADVERTISER",
-        "METRIC_CLIENT_COST_ADVERTISER_CURRENCY",
-    }
-    needs_currency = any(m in COST_METRICS for m in mets)
-    if needs_currency and "FILTER_ADVERTISER_CURRENCY" not in dims:
-        dims = dims + ["FILTER_ADVERTISER_CURRENCY"]
-
-    # Garante que FILTER_DATE está sempre presente
-    if "FILTER_DATE" not in dims:
-        dims = ["FILTER_DATE"] + dims
-
-    # Métricas de Unique Reach só funcionam com dimensões específicas
-    REACH_METRICS = {m for m in mets if "UNIQUE_REACH" in m or "COOKIE_REACH" in m}
-    STANDARD_METRICS = [m for m in mets if m not in REACH_METRICS]
-
-    # Se tem métricas de Reach, remove dimensões incompatíveis
-    if REACH_METRICS:
-        REACH_INCOMPAT_DIMS = {
-            "FILTER_CAMPAIGN","FILTER_INSERTION_ORDER","FILTER_LINE_ITEM",
-            "FILTER_CREATIVE","FILTER_CREATIVE_ID","FILTER_APP_URL",
-            "FILTER_SITE_ID","FILTER_EXCHANGE_ID","FILTER_KEYWORD",
-        }
-        reach_dims = [d for d in dims if d not in REACH_INCOMPAT_DIMS]
-        if not reach_dims:
-            reach_dims = ["FILTER_DATE","FILTER_ADVERTISER_NAME"]
-        # FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID é obrigatório para métricas de Unique Reach
-        if "FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID" not in reach_dims:
-            reach_dims = reach_dims + ["FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID"]
-        mets_to_use = list(REACH_METRICS)
-        dims_to_use = reach_dims
-        use_advertiser_filter = True  # Reach pode usar filtro de advertiser
-    else:
-        mets_to_use = STANDARD_METRICS if STANDARD_METRICS else mets
-        dims_to_use = dims
-        use_advertiser_filter = True
-
-    print(f"[DV360] dims_final={dims_to_use} | mets_final={mets_to_use}")
-
-    headers = {"Authorization":f"Bearer {access_token}"}
-    rows = []
-
-    for acc in accounts:
-        acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
-        print(f"[DV360] Buscando advertiser {acc_id} | {date_start} → {date_end}")
-        ds=date_start.split("-"); de=date_end.split("-")
-        body={
-            "metadata":{
-                "title":f"inflr_{int(_t.time())}",
-                "dataRange":{
-                    "range":"CUSTOM_DATES",
-                    "customStartDate":{"year":int(ds[0]),"month":int(ds[1]),"day":int(ds[2])},
-                    "customEndDate":{"year":int(de[0]),"month":int(de[1]),"day":int(de[2])}
-                }
-            },
-            "params":{
-                "type":"STANDARD",
-                "groupBys":dims_to_use,
-                "metrics":mets_to_use,
-                "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}] if use_advertiser_filter else []
-            }
-        }
-        cr = requests.post(
-            "https://doubleclickbidmanager.googleapis.com/v2/queries",
-            headers=headers, json=body, timeout=30
-        )
-        print(f"[DV360] Create query status={cr.status_code} body={cr.text[:300]}")
-        qid = cr.json().get("queryId")
-        if not qid:
-            print(f"[DV360] Sem queryId — pulando conta {acc_id}")
-            continue
-
-        # Roda o query
-        run_r = requests.post(
-            f"https://doubleclickbidmanager.googleapis.com/v2/queries/{qid}:run",
-            headers=headers, json={}, timeout=30
-        )
-        print(f"[DV360] Run query status={run_r.status_code}")
-
-        # Polling — até 50s (10 tentativas × 5s)
-        for attempt in range(10):
-            _t.sleep(5)
-            rr = requests.get(
-                f"https://doubleclickbidmanager.googleapis.com/v2/queries/{qid}/reports",
-                headers=headers, timeout=15
-            )
-            reports = rr.json().get("reports",[])
-            print(f"[DV360] Poll {attempt+1}: {len(reports)} reports, status={rr.status_code}")
-            if not reports:
-                continue
-            state = reports[-1].get("metadata",{}).get("status",{}).get("state","")
-            print(f"[DV360] Report state={state}")
-            if state == "DONE":
-                gcs_path = reports[-1].get("metadata",{}).get("googleCloudStoragePath","")
-                if not gcs_path:
-                    print("[DV360] Sem GCS path")
-                    break
-                csv_r = requests.get(gcs_path, timeout=30)
-                csv_text = csv_r.text.strip()
-                all_lines = csv_text.split("\n")
-                print(f"[DV360] CSV total linhas={len(all_lines)} primeiras={all_lines[:3]}")
-
-                import re
-                # DV360 CSV tem metadados no topo — encontra a linha do header real
-                # O header real começa com um campo de dimensão (não com "Report")
-                header_idx = None
-                for i, line in enumerate(all_lines):
-                    stripped = line.strip().strip('"')
-                    if stripped and not stripped.startswith("Report") and not stripped.startswith("Filter"):
-                        header_idx = i
-                        break
-
-                if header_idx is None or header_idx >= len(all_lines) - 1:
-                    print("[DV360] Não encontrou header real no CSV")
-                    break
-
-                lines = all_lines[header_idx:]
-                print(f"[DV360] CSV dados linhas={len(lines)} (pulou {header_idx} linhas de metadados)")
-
-                # Sanitiza headers para BigQuery (só letras, números e _)
-                raw_hdrs = [h.strip().strip('"') for h in lines[0].split(",")]
-                hdrs = [re.sub(r'[^a-zA-Z0-9_]', '_', h).strip('_').lower() or f"col_{i}"
-                        for i, h in enumerate(raw_hdrs)]
-
-                for line in lines[1:]:
-                    if not line.strip() or line.strip().startswith("Total"):
-                        continue  # pula linhas vazias e totais
-                    vals = [v.strip().strip('"') for v in line.split(",")]
-                    if len(vals) < len(hdrs):
-                        continue  # pula linhas incompletas
-                    row = dict(zip(hdrs, vals))
-                    row["platform"] = "google dv360"
-                    rows.append(row)
-                break
-            elif state == "FAILED":
-                print(f"[DV360] Report FAILED: {reports[-1]}")
-                break
-
-    print(f"[DV360] Total linhas coletadas: {len(rows)}")
-    return rows
-
-def fetch_kwai(token, accounts, tbl, date_start, date_end):
-    mets = tbl.get("metrics",["show","click","charge","avcpm","ctr"])
-    breakdown = tbl.get("breakdown","campaign")
-    level = {"campaign":"campaign","adgroup":"unit","ad":"creative"}.get(breakdown,"campaign")
-    headers = {"Access-Token":token["access_token"]}
-    rows = []
-    for acc in accounts:
-        acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
-        resp = requests.get(f"https://developers.kwai.com/rest/n/mapi/report/dsp/{level}/effectGet",
-                            headers=headers,
-                            params={"advertiser_id":acc_id,"start_date":date_start,"end_date":date_end,
-                                    "time_granularity":"STAT_TIME_GRANULARITY_DAILY"})
-        data = resp.json()
-        if data.get("result") not in (None,1): raise Exception(f"Kwai API: {data.get('desc','unknown')}")
-        for item in data.get("data",{}).get("details",[]):
-            row={"date":item.get("date",""),"platform":"kwai","account_id":acc_id}
-            for m in mets: row[m]=item.get(m)
-            row["campaign_id"]=str(item.get("campaign_id","")); row["campaign_name"]=item.get("campaign_name","")
-            if breakdown in ("adgroup","ad"): row["adset_id"]=str(item.get("unit_id","")); row["adset_name"]=item.get("unit_name","")
-            rows.append(row)
-    return rows
