@@ -421,9 +421,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
     # Se tem métricas de Reach, remove dimensões incompatíveis
     if REACH_METRICS:
         REACH_INCOMPAT_DIMS = {
-            "FILTER_INSERTION_ORDER","FILTER_INSERTION_ORDER_NAME",
-            "FILTER_LINE_ITEM","FILTER_LINE_ITEM_NAME",
-            "FILTER_CREATIVE","FILTER_CREATIVE_ID",
+            # Apenas inventory e exchange são incompatíveis com Unique Reach
             "FILTER_APP_URL","FILTER_SITE_ID",
             "FILTER_EXCHANGE_ID","FILTER_EXCHANGE",
             "FILTER_KEYWORD","FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID",
@@ -461,7 +459,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
         else:
             print(f"[DV360] Buscando (partner level) | {date_start} → {date_end}")
         ds=date_start.split("-"); de=date_end.split("-")
-        report_type = "REACH" if REACH_METRICS else "STANDARD"
+        report_type = "UNIQUE_REACH_AUDIENCE" if REACH_METRICS else "STANDARD"
         body={
             "metadata":{
                 "title":f"inflr_{int(_t.time())}",
