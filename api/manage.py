@@ -5,14 +5,13 @@ from urllib.parse import urlparse, parse_qs
 import sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from _helpers import (
     get_logs_by_transfer,
-    list_tokens, delete_token,
+    list_tokens, delete_token, get_token, save_token,
     save_destination, list_destinations, delete_destination, test_bq_connection,
     save_table_group, list_table_groups, delete_table_group,
     save_table, list_tables, delete_table,
     save_transfer, list_transfers, get_transfer_full, delete_transfer,
     get_logs
 )
-
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
@@ -28,11 +27,33 @@ class handler(BaseHTTPRequestHandler):
             tid = qs.get('transfer_id',[''])[0]
             self._j(get_logs_by_transfer(int(tid),30) if tid else get_logs(300))
         else: self._j({"error":"not found"},404)
-
     def do_POST(self):
         body = self._body()
         path = urlparse(self.path).path
-        if "/api/destinations/test" in path:
+        if "/api/connections/refresh" in path:
+            platform = body.get("platform","")
+            try:
+                token = get_token(platform)
+                if not token: self._j({"ok":False,"error":"Plataforma não conectada"}); return
+                import requests as req
+                accs = []
+                if platform == "meta":
+                    r = req.get("https://graph.facebook.com/v19.0/me/adaccounts",
+                        params={"access_token":token["access_token"],"fields":"id,name","limit":200},timeout=15)
+                    accs = [{"id":a["id"],"name":a["name"]} for a in r.json().get("data",[])]
+                elif platform == "dv360":
+                    pid = os.environ.get("DV360_PARTNER_ID","")
+                    hdrs = {"Authorization":f"Bearer {token['access_token']}"}
+                    r = req.get(f"https://displayvideo.googleapis.com/v4/advertisers?partnerId={pid}&pageSize=200",
+                        headers=hdrs,timeout=15)
+                    if r.status_code == 200 and r.text.strip():
+                        accs = [{"id":str(a["advertiserId"]),"name":a["displayName"]} for a in r.json().get("advertisers",[])]
+                token["account_ids"] = accs
+                save_token(platform, token)
+                self._j({"ok":True,"accounts":len(accs)})
+            except Exception as e:
+                self._j({"ok":False,"error":str(e)})
+        elif "/api/destinations/test" in path:
             ok, msg = test_bq_connection(body["service_account"], body["bq_project"], body["bq_dataset"])
             self._j({"ok":ok,"message":msg})
         elif "/api/destinations" in path: save_destination(body); self._j({"ok":True})
@@ -40,7 +61,6 @@ class handler(BaseHTTPRequestHandler):
         elif "/api/tables"       in path: self._j({"ok":True,"id":save_table(body)})
         elif "/api/transfers"    in path: self._j({"ok":True,"id":save_transfer(body)})
         else: self._j({"error":"not found"},404)
-
     def do_PATCH(self):
         body = self._body()
         path = urlparse(self.path).path
@@ -48,7 +68,6 @@ class handler(BaseHTTPRequestHandler):
         elif "/api/tables"     in path: save_table(body); self._j({"ok":True})
         elif "/api/transfers"  in path: save_transfer(body); self._j({"ok":True})
         else: self._j({"error":"not found"},404)
-
     def do_DELETE(self):
         path = urlparse(self.path).path
         qs   = parse_qs(urlparse(self.path).query)
@@ -58,7 +77,6 @@ class handler(BaseHTTPRequestHandler):
         elif "/api/tables"       in path: delete_table(int(qs.get("id",[0])[0]))
         elif "/api/transfers"    in path: delete_transfer(int(qs.get("id",[0])[0]))
         self._j({"ok":True})
-
     def do_OPTIONS(self):
         self.send_response(204)
         for h,v in [("Access-Control-Allow-Origin","*"),
@@ -66,16 +84,13 @@ class handler(BaseHTTPRequestHandler):
                     ("Access-Control-Allow-Headers","Content-Type")]:
             self.send_header(h,v)
         self.end_headers()
-
     def _body(self):
         n = int(self.headers.get("Content-Length",0))
         return json.loads(self.rfile.read(n)) if n else {}
-
     def _j(self, data, status=200):
         b = json.dumps(data, default=str).encode()
         self.send_response(status)
         self.send_header("Content-Type","application/json")
         self.send_header("Access-Control-Allow-Origin","*")
         self.end_headers(); self.wfile.write(b)
-
 app = handler
