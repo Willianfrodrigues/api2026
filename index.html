@@ -1219,7 +1219,8 @@ function renderSourcesReal(){
       <div class="flex gap-sm">
         <span class="pill pill-ok">● Conectado</span>
         <span style="font-size:11px;color:var(--mu)">${c.updated_at?.slice(0,10)||''}</span>
-        <button class="btn btn-ghost btn-sm" onclick="location.href='/api/oauth/${c.platform}/start'">Reconectar</button>
+        <button class="btn btn-ghost btn-sm" onclick="refreshAccounts('${c.platform}')">↻ Atualizar contas</button>
+      <button class="btn btn-ghost btn-sm" onclick="${c.platform==='dv360'?'connectDV360()':'location.href=\'/api/oauth/'+c.platform+'/start\''}">Reconectar</button>
         <button class="btn btn-danger btn-sm" onclick="disconnectSource('${c.platform}')">Desconectar</button>
       </div>
     </div>`;
@@ -1919,6 +1920,17 @@ function toBRT(utcStr){
   dt.setHours(dt.getHours() - 3);
   return dt.toISOString().slice(0,16).replace('T',' ');
 }
+
+async function refreshAccounts(platform){
+  toast(`Atualizando contas...`,'ok');
+  const r = await api('/api/connections/refresh','POST',{platform});
+  if(r.ok){
+    toast(`✓ ${r.accounts} conta(s) encontrada(s)`,'ok');
+    loadSources();
+  } else {
+    toast(`Erro: ${r.error||'tente Reconectar'}`,'err');
+  }
+}
 // ══════════════════════════════════════════
 // BACKFILL
 // ══════════════════════════════════════════
@@ -1967,6 +1979,28 @@ async function runBackfill(){
   loadTransfers();
 }
 
+
+async function refreshAccounts(platform){
+  toast(`Atualizando contas...`,'ok');
+  const r = await api('/api/connections/refresh','POST',{platform});
+  if(r.ok){
+    toast(`✓ ${r.accounts} conta(s) encontrada(s)`,'ok');
+    loadSources();
+  } else {
+    toast(`Erro: ${r.error||'tente Reconectar'}`,'err');
+  }
+}
+
+async function connectDV360(){
+  toast('Conectando DV360...','ok');
+  const r = await api('/api/connections/refresh','POST',{platform:'dv360'});
+  if(r.ok){
+    toast(`✓ DV360 conectado — ${r.accounts} advertiser(s)`,'ok');
+    loadSources();
+  } else {
+    toast(`Erro DV360: ${r.error||'Configure o destino DV360 primeiro'}`,'err');
+  }
+}
 // ══════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════
