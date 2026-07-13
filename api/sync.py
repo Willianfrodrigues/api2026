@@ -419,10 +419,12 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
     if REACH_METRICS:
         REACH_INCOMPAT_DIMS = {
             # Incompatíveis com METRIC_UNIQUE_REACH_* conforme doc Bid Manager API
-            "FILTER_INSERTION_ORDER","FILTER_LINE_ITEM",
-            "FILTER_CREATIVE","FILTER_CREATIVE_ID","FILTER_APP_URL",
-            "FILTER_SITE_ID","FILTER_EXCHANGE_ID","FILTER_KEYWORD",
-            # FILTER_MEDIA_PLAN_NAME (Campaign) é COMPATÍVEL com Unique Reach
+            "FILTER_INSERTION_ORDER","FILTER_INSERTION_ORDER_NAME",
+            "FILTER_LINE_ITEM","FILTER_LINE_ITEM_NAME",
+            "FILTER_CREATIVE","FILTER_CREATIVE_ID",
+            "FILTER_APP_URL","FILTER_SITE_ID",
+            "FILTER_EXCHANGE_ID","FILTER_EXCHANGE",
+            "FILTER_KEYWORD",
         }
         reach_dims = [d for d in dims if d not in REACH_INCOMPAT_DIMS]
         # FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID é filtro, não dimensão — não vai no groupBys
