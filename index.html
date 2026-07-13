@@ -1220,7 +1220,7 @@ function renderSourcesReal(){
         <span class="pill pill-ok">● Conectado</span>
         <span style="font-size:11px;color:var(--mu)">${c.updated_at?.slice(0,10)||''}</span>
         <button class="btn btn-ghost btn-sm" onclick="refreshAccounts('${c.platform}')">↻ Atualizar contas</button>
-      <button class="btn btn-ghost btn-sm" onclick="${c.platform==='dv360'?'connectDV360()':'location.href=\'/api/oauth/'+c.platform+'/start\''}">Reconectar</button>
+      <button class="btn btn-ghost btn-sm" onclick="location.href='/api/oauth/${c.platform}/start'">Reconectar</button>
         <button class="btn btn-danger btn-sm" onclick="disconnectSource('${c.platform}')">Desconectar</button>
       </div>
     </div>`;
