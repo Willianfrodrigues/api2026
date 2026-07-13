@@ -421,25 +421,25 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
     # Se tem métricas de Reach, remove dimensões incompatíveis
     if REACH_METRICS:
         REACH_INCOMPAT_DIMS = {
-            # Incompatíveis com METRIC_UNIQUE_REACH_* conforme doc Bid Manager API
             "FILTER_INSERTION_ORDER","FILTER_INSERTION_ORDER_NAME",
             "FILTER_LINE_ITEM","FILTER_LINE_ITEM_NAME",
             "FILTER_CREATIVE","FILTER_CREATIVE_ID",
             "FILTER_APP_URL","FILTER_SITE_ID",
             "FILTER_EXCHANGE_ID","FILTER_EXCHANGE",
-            "FILTER_KEYWORD",
+            "FILTER_KEYWORD","FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID",
         }
-        reach_dims = [d for d in dims if d not in REACH_INCOMPAT_DIMS]
-        # FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID não pode ser groupBy — removido
-        reach_dims = [d for d in reach_dims if d != "FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID"]
+        # Troca FILTER_DATE por FILTER_MONTH (Unique Reach não suporta granularidade diária)
+        reach_dims = []
+        for d in dims:
+            if d == "FILTER_DATE":
+                reach_dims.append("FILTER_MONTH")
+            elif d not in REACH_INCOMPAT_DIMS:
+                reach_dims.append(d)
         if not reach_dims:
-            reach_dims = ["FILTER_DATE","FILTER_ADVERTISER_NAME"]
+            reach_dims = ["FILTER_MONTH", "FILTER_ADVERTISER_NAME"]
         mets_to_use = list(REACH_METRICS)
         dims_to_use = reach_dims
-        use_advertiser_filter = False  # Unique Reach não suporta FILTER_ADVERTISER como filtro
-        # Garante FILTER_ADVERTISER_NAME nos dims para segmentar por advertiser
-        if "FILTER_ADVERTISER_NAME" not in dims_to_use and "FILTER_ADVERTISER" not in dims_to_use:
-            dims_to_use = ["FILTER_ADVERTISER_NAME"] + dims_to_use
+        use_advertiser_filter = False  # Unique Reach: uma query por parceiro, sem filtro de advertiser
     else:
         mets_to_use = STANDARD_METRICS if STANDARD_METRICS else mets
         dims_to_use = dims
@@ -450,9 +450,16 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
     headers = {"Authorization":f"Bearer {access_token}"}
     rows = []
 
-    for acc in accounts:
-        acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
-        print(f"[DV360] Buscando advertiser {acc_id} | {date_start} → {date_end}")
+    # Para Unique Reach: uma query única (sem filtro por advertiser)
+    # Para outras métricas: uma query por advertiser
+    accs_to_iterate = [None] if not use_advertiser_filter else accounts
+
+    for acc in accs_to_iterate:
+        acc_id = (acc["id"] if isinstance(acc,dict) else str(acc)) if acc else None
+        if acc_id:
+            print(f"[DV360] Buscando advertiser {acc_id} | {date_start} → {date_end}")
+        else:
+            print(f"[DV360] Buscando (partner level) | {date_start} → {date_end}")
         ds=date_start.split("-"); de=date_end.split("-")
         body={
             "metadata":{
@@ -467,7 +474,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                 "type":"STANDARD",
                 "groupBys":dims_to_use,
                 "metrics":mets_to_use,
-                "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}] if use_advertiser_filter else []
+                "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}] if (use_advertiser_filter and acc_id) else []
             }
         }
         cr = requests.post(
