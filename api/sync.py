@@ -421,23 +421,25 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
     # Se tem métricas de Reach, remove dimensões incompatíveis
     if REACH_METRICS:
         REACH_INCOMPAT_DIMS = {
-            # Apenas inventory e exchange são incompatíveis com Unique Reach
             "FILTER_APP_URL","FILTER_SITE_ID",
             "FILTER_EXCHANGE_ID","FILTER_EXCHANGE",
             "FILTER_KEYWORD","FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID",
         }
-        # Troca FILTER_DATE por FILTER_MONTH (Unique Reach não suporta granularidade diária)
-        reach_dims = []
-        for d in dims:
-            if d == "FILTER_DATE":
-                reach_dims.append("FILTER_MONTH")
-            elif d not in REACH_INCOMPAT_DIMS:
-                reach_dims.append(d)
+        # Mantém FILTER_DATE — não converte para FILTER_MONTH
+        reach_dims = [d for d in dims if d not in REACH_INCOMPAT_DIMS]
         if not reach_dims:
-            reach_dims = ["FILTER_MONTH", "FILTER_ADVERTISER_NAME"]
+            reach_dims = ["FILTER_DATE", "FILTER_ADVERTISER_NAME"]
         mets_to_use = list(REACH_METRICS)
         dims_to_use = reach_dims
-        use_advertiser_filter = False  # Unique Reach: uma query por parceiro, sem filtro de advertiser
+        use_advertiser_filter = False
+        # UNIQUE_REACH_AUDIENCE exige janela mínima de 7 dias
+        if not custom_start:
+            reach_window = max(int(slot.get("window", 7)), 7)
+            date_end_reach = date_end
+            date_start_reach = (datetime.today() - timedelta(days=reach_window)).strftime("%Y-%m-%d")
+        else:
+            date_start_reach = date_start
+            date_end_reach = date_end
     else:
         mets_to_use = STANDARD_METRICS if STANDARD_METRICS else mets
         dims_to_use = dims
@@ -460,13 +462,15 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
             print(f"[DV360] Buscando (partner level) | {date_start} → {date_end}")
         ds=date_start.split("-"); de=date_end.split("-")
         report_type = "UNIQUE_REACH_AUDIENCE" if REACH_METRICS else "STANDARD"
+        ds_use = date_start_reach.split("-") if REACH_METRICS and not use_advertiser_filter else date_start.split("-")
+        de_use = date_end_reach.split("-") if REACH_METRICS and not use_advertiser_filter else date_end.split("-")
         body={
             "metadata":{
                 "title":f"inflr_{int(_t.time())}",
                 "dataRange":{
                     "range":"CUSTOM_DATES",
-                    "customStartDate":{"year":int(ds[0]),"month":int(ds[1]),"day":int(ds[2])},
-                    "customEndDate":{"year":int(de[0]),"month":int(de[1]),"day":int(de[2])}
+                    "customStartDate":{"year":int(ds_use[0]),"month":int(ds_use[1]),"day":int(ds_use[2])},
+                    "customEndDate":{"year":int(de_use[0]),"month":int(de_use[1]),"day":int(de_use[2])}
                 }
             },
             "params":{
