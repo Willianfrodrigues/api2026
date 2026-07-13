@@ -395,8 +395,25 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
         except Exception as e:
             print(f"[DV360] Token refresh erro: {e}")
 
+    # Bid Manager exige FILTER_ADVERTISER_CURRENCY quando há métricas de custo em moeda do anunciante
+    COST_METRICS = {
+        "METRIC_MEDIA_COST_ADVERTISER","METRIC_TOTAL_MEDIA_COST_ADVERTISER",
+        "METRIC_REVENUE_ADVERTISER","METRIC_BILLABLE_COST_ADVERTISER",
+        "METRIC_PROFIT_ADVERTISER","METRIC_MEDIA_COST_ECPM_ADVERTISER",
+        "METRIC_CPM_FEE1_ADVERTISER","METRIC_PLATFORM_FEE_ADVERTISER",
+        "METRIC_CLIENT_COST_ADVERTISER_CURRENCY",
+    }
+    needs_currency = any(m in COST_METRICS for m in mets)
+    if needs_currency and "FILTER_ADVERTISER_CURRENCY" not in dims:
+        dims = dims + ["FILTER_ADVERTISER_CURRENCY"]
+
+    # Garante que FILTER_DATE está sempre presente
+    if "FILTER_DATE" not in dims:
+        dims = ["FILTER_DATE"] + dims
+
     headers = {"Authorization":f"Bearer {access_token}"}
     rows = []
+    print(f"[DV360] dims={dims} | mets={mets}")
 
     for acc in accounts:
         acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
