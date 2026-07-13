@@ -411,9 +411,27 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
     if "FILTER_DATE" not in dims:
         dims = ["FILTER_DATE"] + dims
 
-    headers = {"Authorization":f"Bearer {access_token}"}
-    rows = []
-    print(f"[DV360] dims={dims} | mets={mets}")
+    # Métricas de Unique Reach só funcionam com dimensões específicas
+    REACH_METRICS = {m for m in mets if "UNIQUE_REACH" in m or "COOKIE_REACH" in m}
+    STANDARD_METRICS = [m for m in mets if m not in REACH_METRICS]
+
+    # Se tem métricas de Reach, remove dimensões incompatíveis
+    if REACH_METRICS:
+        REACH_INCOMPAT_DIMS = {
+            "FILTER_CAMPAIGN","FILTER_INSERTION_ORDER","FILTER_LINE_ITEM",
+            "FILTER_CREATIVE","FILTER_CREATIVE_ID","FILTER_APP_URL",
+            "FILTER_SITE_ID","FILTER_EXCHANGE_ID","FILTER_KEYWORD",
+        }
+        reach_dims = [d for d in dims if d not in REACH_INCOMPAT_DIMS]
+        if not reach_dims:
+            reach_dims = ["FILTER_DATE","FILTER_ADVERTISER_NAME"]
+        mets_to_use = list(REACH_METRICS)
+        dims_to_use = reach_dims
+    else:
+        mets_to_use = STANDARD_METRICS if STANDARD_METRICS else mets
+        dims_to_use = dims
+
+    print(f"[DV360] dims_final={dims_to_use} | mets_final={mets_to_use}")
 
     for acc in accounts:
         acc_id = acc["id"] if isinstance(acc,dict) else str(acc)
@@ -475,7 +493,11 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                 print(f"[DV360] CSV linhas={len(lines)}")
                 if len(lines) < 2:
                     break
-                hdrs = [h.strip().strip('"') for h in lines[0].split(",")]
+                import re
+                # Sanitiza headers para BigQuery (só letras, números e _)
+                raw_hdrs = [h.strip().strip('"') for h in lines[0].split(",")]
+                hdrs = [re.sub(r'[^a-zA-Z0-9_]', '_', h).strip('_').lower() or f"col_{i}"
+                        for i, h in enumerate(raw_hdrs)]
                 for line in lines[1:]:
                     vals = [v.strip().strip('"') for v in line.split(",")]
                     row = dict(zip(hdrs, vals))
