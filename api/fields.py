@@ -5,8 +5,18 @@ import sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _helpers import get_token
 
 META_INCOMPAT = [
-    ["audience","region"],["audience","placement"],["lead","audience"],
-    ["lead","region"],["lead","placement"],["lead","ad"]
+    # Audience não combina com placement (doc oficial Meta)
+    ["audience","placement"],
+    # Audience não combina com region quando juntos com placement
+    ["audience","region"],
+    # Lead form não combina com audience
+    ["lead","audience"],
+    # Lead form não combina com placement
+    ["lead","placement"],
+    # Lead form não combina com region
+    ["lead","region"],
+    # Lead form não combina com ad level
+    ["lead","ad"],
 ]
 
 META_DIMENSIONS = [
@@ -271,7 +281,16 @@ META_METRICS = [
     {"id":"people_taking_action_rate","label":"People taking action rate %"},
 ]
 
-TIKTOK_INCOMPAT = [["audience","geo"],["audience","placement"],["ad","audience"],["ad","geo"]]
+TIKTOK_INCOMPAT = [
+    # Audience não combina com ad level (Basic report)
+    ["audience","ad"],
+    # Audience não combina com geo detalhado
+    ["audience","geo"],
+    # Audience não combina com placement no mesmo breakdown
+    ["audience","placement"],
+    # TrueView/YouTube específico — não mistura com padrão
+    ["trueview","standard"],
+]
 
 TIKTOK_DIMENSIONS = [
     {"id":"stat_time_day","label":"Date"},{"id":"hour","label":"Hour"},
@@ -488,7 +507,14 @@ TIKTOK_METRICS = [
     {"id":"cost_usd","label":"Cost (USD)"},
 ]
 
-DV360_INCOMPAT = [["audience","geo"],["audience","inventory"],["trueview","standard"]]
+DV360_INCOMPAT = [
+    # Audience não combina com inventory (doc Bid Manager API)
+    ["audience","inventory"],
+    # TrueView/YouTube não combina com display standard
+    ["trueview","standard"],
+    # Audience não combina com geo detalhado
+    ["audience","geo"],
+]
 
 DV360_DIMENSIONS = [
     # Time
