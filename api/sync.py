@@ -491,18 +491,38 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                 if not gcs_path:
                     print("[DV360] Sem GCS path")
                     break
-                csv_r = requests.get(gcs_path, timeout=30)
-                lines = csv_r.text.strip().split("\n")
-                print(f"[DV360] CSV linhas={len(lines)}")
-                if len(lines) < 2:
-                    break
+                csv_text = csv_r.text.strip()
+                all_lines = csv_text.split("\n")
+                print(f"[DV360] CSV total linhas={len(all_lines)} primeiras={all_lines[:3]}")
+
                 import re
+                # DV360 CSV tem metadados no topo — encontra a linha do header real
+                # O header real começa com um campo de dimensão (não com "Report")
+                header_idx = None
+                for i, line in enumerate(all_lines):
+                    stripped = line.strip().strip('"')
+                    if stripped and not stripped.startswith("Report") and not stripped.startswith("Filter"):
+                        header_idx = i
+                        break
+
+                if header_idx is None or header_idx >= len(all_lines) - 1:
+                    print("[DV360] Não encontrou header real no CSV")
+                    break
+
+                lines = all_lines[header_idx:]
+                print(f"[DV360] CSV dados linhas={len(lines)} (pulou {header_idx} linhas de metadados)")
+
                 # Sanitiza headers para BigQuery (só letras, números e _)
                 raw_hdrs = [h.strip().strip('"') for h in lines[0].split(",")]
                 hdrs = [re.sub(r'[^a-zA-Z0-9_]', '_', h).strip('_').lower() or f"col_{i}"
                         for i, h in enumerate(raw_hdrs)]
+
                 for line in lines[1:]:
+                    if not line.strip() or line.strip().startswith("Total"):
+                        continue  # pula linhas vazias e totais
                     vals = [v.strip().strip('"') for v in line.split(",")]
+                    if len(vals) < len(hdrs):
+                        continue  # pula linhas incompletas
                     row = dict(zip(hdrs, vals))
                     row["platform"] = "google dv360"
                     rows.append(row)
