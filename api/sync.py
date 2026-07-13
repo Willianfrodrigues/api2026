@@ -425,9 +425,12 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
         reach_dims = [d for d in dims if d not in REACH_INCOMPAT_DIMS]
         if not reach_dims:
             reach_dims = ["FILTER_DATE","FILTER_ADVERTISER_NAME"]
+        # FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID é obrigatório para métricas de Unique Reach
+        if "FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID" not in reach_dims:
+            reach_dims = reach_dims + ["FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID"]
         mets_to_use = list(REACH_METRICS)
         dims_to_use = reach_dims
-        use_advertiser_filter = False  # Unique Reach não suporta filtro por advertiser
+        use_advertiser_filter = True  # Reach pode usar filtro de advertiser
     else:
         mets_to_use = STANDARD_METRICS if STANDARD_METRICS else mets
         dims_to_use = dims
