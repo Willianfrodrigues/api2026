@@ -461,6 +461,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
         else:
             print(f"[DV360] Buscando (partner level) | {date_start} → {date_end}")
         ds=date_start.split("-"); de=date_end.split("-")
+        report_type = "REACH" if REACH_METRICS else "STANDARD"
         body={
             "metadata":{
                 "title":f"inflr_{int(_t.time())}",
@@ -471,7 +472,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                 }
             },
             "params":{
-                "type":"STANDARD",
+                "type": report_type,
                 "groupBys":dims_to_use,
                 "metrics":mets_to_use,
                 "filters":[{"type":"FILTER_ADVERTISER","value":acc_id}] if (use_advertiser_filter and acc_id) else []
