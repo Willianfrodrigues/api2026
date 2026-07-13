@@ -10,6 +10,7 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self._body()
         tid  = body.get("transfer_id")
+        table_id    = body.get("table_id")
         slot_time   = body.get("slot_time")
         custom_start = body.get("date_start")
         custom_end   = body.get("date_end")
@@ -25,7 +26,7 @@ class handler(BaseHTTPRequestHandler):
             if not tr: continue
             slots = tr.get("slots") or [{"time":"00:00","window":3,"type":"daily"}]
             slot = next((s for s in slots if s.get("time")==slot_time), slots[0]) if slot_time else slots[0]
-            results.append(run_transfer(tr, slot, custom_start=custom_start, custom_end=custom_end, is_backfill=is_backfill))
+            results.append(run_transfer(tr, slot, custom_start=custom_start, custom_end=custom_end, is_backfill=is_backfill, only_table_id=table_id))
 
         self._j({"results": results})
 
@@ -51,7 +52,7 @@ app = handler
 
 # ── EXECUTOR ─────────────────────────────────────────────────────────────────
 
-def run_transfer(tr, slot, custom_start=None, custom_end=None, is_backfill=False):
+def run_transfer(tr, slot, custom_start=None, custom_end=None, is_backfill=False, only_table_id=None):
     t0 = time.time()
     tid = tr["id"]
     platform = tr["platform"]
@@ -86,6 +87,8 @@ def run_transfer(tr, slot, custom_start=None, custom_end=None, is_backfill=False
     accounts = [a for a in all_accounts if (a["id"] if isinstance(a,dict) else str(a)) in selected_ids] if selected_ids else all_accounts
 
     tables = list_tables(tr["group_id"]) if tr.get("group_id") else []
+    if only_table_id:
+        tables = [t for t in tables if t["id"] == int(only_table_id)]
     if not tables:
         update_transfer_run(tid, "error", 0)
         return {"transfer_id":tid,"status":"error","error":"Sem tabelas no grupo"}
