@@ -533,6 +533,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                     print("[DV360] Sem GCS path")
                     break
                 csv_r = requests.get(gcs_path, timeout=30)
+                csv_r.encoding = 'utf-8'  # força UTF-8
                 csv_text = csv_r.text.strip()
                 all_lines = csv_text.split("\n")
                 print(f"[DV360] CSV total linhas={len(all_lines)} primeiras={all_lines[:3]}")
