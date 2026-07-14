@@ -492,6 +492,7 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
     print(f"[DV360] dims_final={dims_to_use} | mets_final={mets_to_use}")
 
     rows = []
+    headers = {"Authorization":f"Bearer {access_token}"}
 
     # Para Unique Reach: uma query única (sem filtro por advertiser)
     # Para outras métricas: uma query por advertiser
