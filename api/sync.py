@@ -102,7 +102,7 @@ def run_transfer(tr, slot, custom_start=None, custom_end=None, is_backfill=False
             print(f"[SYNC] Buscando dados: {tbl['bq_table']} | contas: {len(accounts)} | {date_start} -> {date_end}")
             rows = fetch_platform(platform, token, accounts, tbl, date_start, date_end)
             print(f"[SYNC] Linhas buscadas: {len(rows)}")
-            n = upsert_bq(bq, tr["bq_project"], tr["bq_dataset"], tbl["bq_table"], rows)
+            n = upsert_bq(bq, tr["bq_project"], tr["bq_dataset"], tbl["bq_table"], rows, aliases=tbl.get("aliases",{}))
             ms = int((time.time()-t1)*1000)
             print(f"[SYNC] BQ ok: {n} linhas em {ms}ms")
             total_rows += n
@@ -559,10 +559,14 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                 lines = all_lines[header_idx:]
                 print(f"[DV360] CSV dados linhas={len(lines)} (pulou {header_idx} linhas de metadados)")
 
-                # Sanitiza headers para BigQuery (só letras, números e _)
+                # Sanitiza headers para BigQuery — remove parênteses e múltiplos underscores
                 raw_hdrs = [h.strip().strip('"') for h in lines[0].split(",")]
-                hdrs = [re.sub(r'[^a-zA-Z0-9_]', '_', h).strip('_').lower() or f"col_{i}"
-                        for i, h in enumerate(raw_hdrs)]
+                hdrs = []
+                for i, h in enumerate(raw_hdrs):
+                    clean = re.sub(r'\s*\([^)]*\)', '', h)  # remove (conteúdo)
+                    clean = re.sub(r'[^a-zA-Z0-9]', '_', clean)  # invalidos → _
+                    clean = re.sub(r'_+', '_', clean).strip('_').lower()  # limpa ___
+                    hdrs.append(clean or f"col_{i}")
 
                 for line in lines[1:]:
                     if not line.strip():
