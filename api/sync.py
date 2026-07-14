@@ -424,9 +424,6 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
             "FILTER_APP_URL","FILTER_SITE_ID",
             "FILTER_EXCHANGE_ID","FILTER_EXCHANGE",
             "FILTER_KEYWORD","FILTER_UNIQUE_REACH_SAMPLE_SIZE_ID",
-            # Para UNIQUE_REACH_AUDIENCE, date vai no dataRange, não no groupBy
-            "FILTER_DATE","FILTER_WEEK","FILTER_MONTH","FILTER_QUARTER","FILTER_YEAR",
-            "FILTER_DAY_OF_WEEK","FILTER_TIME_OF_DAY","FILTER_YEAR_MONTH",
         }
         # Mantém FILTER_DATE — não converte para FILTER_MONTH
         reach_dims = [d for d in dims if d not in REACH_INCOMPAT_DIMS]
@@ -564,12 +561,14 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
 
                 for line in lines[1:]:
                     if not line.strip() or line.strip().startswith("Total"):
-                        continue  # pula linhas vazias e totais
+                        continue
                     vals = [v.strip().strip('"') for v in line.split(",")]
                     if len(vals) < len(hdrs):
-                        continue  # pula linhas incompletas
+                        continue
                     row = dict(zip(hdrs, vals))
                     row["platform"] = "google dv360"
+                    if not use_advertiser_filter:
+                        row["report_date"] = date_end  # data de extração para contexto temporal
                     rows.append(row)
                 break
             elif state == "FAILED":
