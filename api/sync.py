@@ -565,15 +565,21 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                         for i, h in enumerate(raw_hdrs)]
 
                 for line in lines[1:]:
-                    if not line.strip() or line.strip().startswith("Total"):
+                    if not line.strip():
                         continue
-                    vals = [v.strip().strip('"') for v in line.split(",")]
+                    stripped = line.strip()
+                    # Pula rodapés do DV360 (Total, Filter by, linhas com poucos campos)
+                    if (stripped.lower().startswith("total") or 
+                        "filter by" in stripped.lower() or
+                        stripped.startswith("Filter")):
+                        continue
+                    vals = [v.strip().strip('"') for v in stripped.split(",")]
                     if len(vals) < len(hdrs):
                         continue
                     row = dict(zip(hdrs, vals))
                     row["platform"] = "google dv360"
                     if not use_advertiser_filter:
-                        row["report_date"] = date_end  # data de extração para contexto temporal
+                        row["report_date"] = date_end
                     rows.append(row)
                 break
             elif state == "FAILED":
