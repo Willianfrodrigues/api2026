@@ -959,7 +959,7 @@ function renderF(type){
     const incompat=f.g&&ig.has(f.g)&&!sel.has(f.id);
     const checked=sel.has(f.id);
     return `<div class="fp-item${checked?' selected':''}${incompat?' incompat':''}" data-id="${f.id}" onclick="${incompat?'':`toggleF('${type}','${f.id}')`}">
-      <input type="checkbox" ${checked?'checked':''} ${incompat?'disabled':''} style="accent-color:var(--teal);cursor:pointer;flex-shrink:0" onclick="event.stopPropagation();${incompat?'':``}">
+      <input type="checkbox" ${checked?'checked':''} ${incompat?'disabled':''} style="accent-color:var(--teal);cursor:pointer;flex-shrink:0" onclick="event.preventDefault();event.stopPropagation();${incompat?'':` toggleF('${type}','${f.id}')`}">
       <span>${f.l}</span>
       ${incompat?'<span class="fp-incompat-tag">⚠ incompat</span>':''}
     </div>`;
