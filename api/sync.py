@@ -6,6 +6,43 @@ import sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(_
 from _helpers import (get_token, get_transfer_full, list_tables, list_transfers,
                       get_bq_client, upsert_bq, update_transfer_run, add_log)
 
+# Mapeamento DV360: field_id → nome sanitizado que vem no CSV do Bid Manager API
+DV360_FIELD_TO_CSV = {
+    "FILTER_DATE":"date","FILTER_MONTH":"month","FILTER_WEEK":"week",
+    "FILTER_PARTNER":"partner_id","FILTER_PARTNER_NAME":"partner_id",
+    "FILTER_ADVERTISER":"advertiser_id","FILTER_ADVERTISER_NAME":"advertiser",
+    "FILTER_ADVERTISER_CURRENCY":"advertiser_currency",
+    "FILTER_MEDIA_PLAN":"campaign_id","FILTER_MEDIA_PLAN_NAME":"campaign",
+    "FILTER_INSERTION_ORDER":"insertion_order_id","FILTER_INSERTION_ORDER_NAME":"insertion_order",
+    "FILTER_LINE_ITEM":"line_item_id","FILTER_LINE_ITEM_NAME":"line_item",
+    "FILTER_CREATIVE_ID":"creative_id","FILTER_CREATIVE":"creative",
+    "FILTER_CREATIVE_TYPE":"creative_type","FILTER_MEDIA_TYPE":"media_type",
+    "FILTER_DEVICE_TYPE":"device_type","FILTER_COUNTRY":"country",
+    "FILTER_REGION":"region_id","FILTER_REGION_NAME":"region",
+    "FILTER_CITY":"city_id","FILTER_CITY_NAME":"city",
+    "FILTER_DMA":"dma_code","FILTER_DMA_NAME":"dma",
+    "FILTER_SITE_ID":"app_url_id","FILTER_APP_URL":"app_url",
+    "FILTER_EXCHANGE_ID":"exchange_id","FILTER_EXCHANGE":"exchange",
+    "FILTER_AGE":"age","FILTER_GENDER":"gender",
+    "METRIC_IMPRESSIONS":"impressions","METRIC_CLICKS":"clicks",
+    "METRIC_MEDIA_COST_ADVERTISER":"media_cost",
+    "METRIC_TOTAL_MEDIA_COST_ADVERTISER":"total_media_cost",
+    "METRIC_REVENUE_ADVERTISER":"revenue",
+    "METRIC_TOTAL_CONVERSIONS":"total_conversions",
+    "METRIC_LAST_CLICKS":"post_click_conversions",
+    "METRIC_LAST_IMPRESSIONS":"post_view_conversions",
+    "METRIC_RICH_MEDIA_VIDEO_PLAYS":"video_plays",
+    "METRIC_RICH_MEDIA_VIDEO_COMPLETIONS":"video_completions",
+    "METRIC_RICH_MEDIA_VIDEO_FIRST_QUARTILE_COMPLETES":"video_1st_quartile_completes",
+    "METRIC_RICH_MEDIA_VIDEO_MIDPOINTS":"video_mid_points",
+    "METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES":"video_3rd_quartile_completes",
+    "METRIC_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS":"active_view_viewable_impressions",
+    "METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS":"active_view_measurable_impressions",
+    "METRIC_UNIQUE_REACH_TOTAL_REACH":"unique_reach_total_reach",
+    "METRIC_UNIQUE_REACH_IMPRESSION_REACH":"unique_reach_impression_reach",
+    "METRIC_UNIQUE_REACH_AVERAGE_IMPRESSION_FREQUENCY":"unique_reach_average_impression_frequency",
+}
+
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self._body()
@@ -102,7 +139,13 @@ def run_transfer(tr, slot, custom_start=None, custom_end=None, is_backfill=False
             print(f"[SYNC] Buscando dados: {tbl['bq_table']} | contas: {len(accounts)} | {date_start} -> {date_end}")
             rows = fetch_platform(platform, token, accounts, tbl, date_start, date_end)
             print(f"[SYNC] Linhas buscadas: {len(rows)}")
-            n = upsert_bq(bq, tr["bq_project"], tr["bq_dataset"], tbl["bq_table"], rows, aliases=tbl.get("aliases",{}))
+            # Para DV360, converte aliases de field_id para csv_name
+            raw_aliases = tbl.get("aliases") or {}
+            if platform == "dv360" and raw_aliases:
+                aliases_to_use = {DV360_FIELD_TO_CSV[k]: v for k, v in raw_aliases.items() if k in DV360_FIELD_TO_CSV and v}
+            else:
+                aliases_to_use = raw_aliases
+            n = upsert_bq(bq, tr["bq_project"], tr["bq_dataset"], tbl["bq_table"], rows, aliases=aliases_to_use)
             ms = int((time.time()-t1)*1000)
             print(f"[SYNC] BQ ok: {n} linhas em {ms}ms")
             total_rows += n
@@ -448,7 +491,6 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
 
     print(f"[DV360] dims_final={dims_to_use} | mets_final={mets_to_use}")
 
-    headers = {"Authorization":f"Bearer {access_token}"}
     rows = []
 
     # Para Unique Reach: uma query única (sem filtro por advertiser)
