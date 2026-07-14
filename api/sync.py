@@ -456,6 +456,8 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
 
     # Para Unique Reach: uma query única (sem filtro por advertiser)
     # Para outras métricas: uma query por advertiser
+    ds_use = date_start.split("-")
+    de_use = date_end.split("-")
     accs_to_iterate = [None] if not use_advertiser_filter else accounts
 
     for acc in accs_to_iterate:
