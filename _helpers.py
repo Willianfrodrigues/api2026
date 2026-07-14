@@ -367,21 +367,31 @@ def ensure_bq_dataset(bq, project, dataset):
         ds.location = "US"
         bq.create_dataset(ds, exists_ok=True)
 
+import re as _re
+
+def _sanitize_col(name):
+    """Sanitiza nome de coluna para BigQuery: remove parênteses, caracteres inválidos e underscores múltiplos."""
+    clean = _re.sub(r'\s*\([^)]*\)', '', str(name))  # remove (conteúdo)
+    clean = _re.sub(r'[^a-zA-Z0-9]', '_', clean)     # invalidos → _
+    clean = _re.sub(r'_+', '_', clean).strip('_').lower()
+    return clean or 'col'
+
 def upsert_bq(bq, project, dataset, table_name, rows):
     from google.cloud import bigquery
     if not rows: return 0
 
-    # Limpa valores: remove _synced_at e converte float inteiros para int
+    # Sanitiza nomes de colunas e limpa valores
     clean_rows = []
     for r in rows:
         clean = {}
         for k, v in r.items():
             if k == "_synced_at":
                 continue
+            col = _sanitize_col(k)
             if isinstance(v, float) and v == int(v):
-                clean[k] = int(v)
+                clean[col] = int(v)
             else:
-                clean[k] = v
+                clean[col] = v
         clean_rows.append(clean)
 
     # Garante que o dataset existe
