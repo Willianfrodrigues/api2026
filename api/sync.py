@@ -578,8 +578,6 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
                         continue
                     row = dict(zip(hdrs, vals))
                     row["platform"] = "google dv360"
-                    if not use_advertiser_filter:
-                        row["report_date"] = date_end
                     rows.append(row)
                 break
             elif state == "FAILED":
