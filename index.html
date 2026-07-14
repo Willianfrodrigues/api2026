@@ -898,6 +898,7 @@ const CATALOG = {};
 const S = {
   selDims: new Set(),
   selMets: new Set(),
+  selAliases: {},
   curPlat: "meta",
   editingTable: null,
   slots: [
@@ -958,9 +959,12 @@ function renderF(type){
   listEl.innerHTML=filtered.map(f=>{
     const incompat=f.g&&ig.has(f.g)&&!sel.has(f.id);
     const checked=sel.has(f.id);
+    const defAlias = f.id.toLowerCase().replace(/filter_|metric_/,'').replace(/_+/g,'_');
+    const alias = S.selAliases[f.id]||'';
     return `<div class="fp-item${checked?' selected':''}${incompat?' incompat':''}" data-id="${f.id}" onclick="${incompat?'':`toggleF('${type}','${f.id}')`}">
       <input type="checkbox" ${checked?'checked':''} ${incompat?'disabled':''} style="accent-color:var(--teal);cursor:pointer;flex-shrink:0" onclick="event.preventDefault();event.stopPropagation();${incompat?'':` toggleF('${type}','${f.id}')`}">
-      <span>${f.l}</span>
+      <span style="flex:1">${f.l}</span>
+      ${checked?`<input type="text" class="alias-input" value="${alias}" placeholder="${defAlias}" title="Nome da coluna no BigQuery" onclick="event.stopPropagation()" oninput="S.selAliases['${f.id}']=this.value" style="width:130px;font-size:10px;padding:2px 6px;background:var(--bg);border:1px solid var(--bd2);color:var(--teal);border-radius:4px;font-family:'JetBrains Mono',monospace">`:``}
       ${incompat?'<span class="fp-incompat-tag">⚠ incompat</span>':''}
     </div>`;
   }).join('')||`<div style="padding:10px 12px;font-size:11px;color:var(--mu)">Sem resultados</div>`;
@@ -1418,7 +1422,7 @@ async function openNewTableForm(groupId, platform){
   document.getElementById('tbl-breakdown').value = 'campaign';
   document.getElementById('tbl-plat-disp').value = PLAT[platform]?.n||platform;
   document.getElementById('s-dim').value=''; document.getElementById('s-met').value='';
-  S.selDims = new Set(); S.selMets = new Set();
+  S.selDims = new Set(); S.selMets = new Set(); S.selAliases = {};
   const btn = document.getElementById('tbl-save-btn');
   if(btn) btn.textContent = 'Add table';
   openMo('mo-table');
@@ -1445,6 +1449,7 @@ async function openEditTableForm(tableId, groupId, platform){
   // Guarda IDs salvos para restaurar após fetch
   const savedDimIds = [...(t.dimensions||[])];
   const savedMetIds = [...(t.metrics||[])];
+  const savedAliases = t.aliases||{};
 
   const btn = document.getElementById('tbl-save-btn');
   if(btn) btn.textContent = 'Save changes';
@@ -1456,6 +1461,7 @@ async function openEditTableForm(tableId, groupId, platform){
   // Restaura seleções APÓS o fetch (fetchFields pode limpar)
   S.selDims = new Set(savedDimIds);
   S.selMets = new Set(savedMetIds);
+  S.selAliases = {...savedAliases};
 
   // Re-renderiza com seleções restauradas
   renderF('dim'); renderF('met'); updateTbSummary();
@@ -1496,6 +1502,7 @@ async function saveTableForm(){
     name, bq_table: bq,
     dimensions: dims,
     metrics: mets,
+    aliases: S.selAliases,
     breakdown: document.getElementById('tbl-breakdown')?.value||'campaign'
   };
 
