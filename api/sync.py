@@ -183,6 +183,7 @@ META_ACTIONS_MAP = {
     "search":                ("actions", "search"),
     "subscribe":             ("actions", "subscribe"),
     "start_trial":           ("actions", "start_trial"),
+    "mobile_app_installs":   ("actions", "app_install"),
     "mobile_app_install":    ("actions", "app_install"),
     "video_view":            ("actions", "video_view"),
     "contact":               ("actions", "contact"),
@@ -191,9 +192,33 @@ META_ACTIONS_MAP = {
     "schedule":              ("actions", "schedule"),
     "submit_application":    ("actions", "submit_application"),
     "customize_product":     ("actions", "customize_product"),
-    # Vídeo — vêm como arrays próprios com action_type="video_view"
+    # Engajamento
+    "post_comments":         ("actions", "comment"),
+    "post_reactions":        ("actions", "post_reaction"),
+    "post_shares":           ("actions", "post"),
+    "post_saves":            ("actions", "post_save"),
+    "post_engagement":       ("actions", "post_engagement"),
+    "page_engagement":       ("actions", "page_engagement"),
+    "page_likes":            ("actions", "like"),
+    "photo_view":            ("actions", "photo_view"),
+    "checkin":               ("actions", "checkin"),
+    "event_responses":       ("actions", "rsvp"),
+    "messaging_conversations_started": ("actions", "onsite_conversion.messaging_conversation_started_7d"),
+    "leads":                 ("actions", "offsite_conversion.fb_pixel_lead"),
+    # Cliques únicos
+    "unique_inline_link_clicks":  ("unique_actions", "link_click"),
+    "unique_landing_page_views":  ("unique_actions", "landing_page_view"),
+    "unique_post_comments":       ("unique_actions", "comment"),
+    "unique_page_likes":          ("unique_actions", "like"),
+    "unique_page_engagements":    ("unique_actions", "page_engagement"),
+    "unique_photo_views":         ("unique_actions", "photo_view"),
+    "unique_post_engagements":    ("unique_actions", "post_engagement"),
+    "unique_post_reactions":      ("unique_actions", "post_reaction"),
+    # Vídeo — vêm como arrays próprios
+    "video_play_actions":                      ("video_play_actions", "video_view"),
     "video_thruplay_watched_actions":          ("video_thruplay_watched_actions", "video_view"),
     "video_30_sec_watched_actions":            ("video_30_sec_watched_actions", "video_view"),
+    "video_15_sec_watched_actions":            ("video_15_sec_watched_actions", "video_view"),
     "video_p25_watched_actions":               ("video_p25_watched_actions", "video_view"),
     "video_p50_watched_actions":               ("video_p50_watched_actions", "video_view"),
     "video_p75_watched_actions":               ("video_p75_watched_actions", "video_view"),
@@ -201,6 +226,9 @@ META_ACTIONS_MAP = {
     "video_p100_watched_actions":              ("video_p100_watched_actions", "video_view"),
     "video_continuous_2_sec_watched_actions":  ("video_continuous_2_sec_watched_actions", "video_view"),
     "video_avg_time_watched_actions":          ("video_avg_time_watched_actions", "video_view"),
+    # Video play curve (ação específica de segundos)
+    "video_play_curve_3":  ("video_play_curve_actions", "s3"),
+    "video_play_curve_6":  ("video_play_curve_actions", "s6"),
 }
 
 def extract_action_value(data_row, arr_field, action_type_key):
@@ -312,6 +340,10 @@ def fetch_meta(token, accounts, tbl, date_start, date_end):
                 direct_fields.append(arr)
         if "action_values" not in direct_fields:
             direct_fields.append("action_values")
+        # unique_actions para campos únicos
+        if any(META_ACTIONS_MAP[f][0] == "unique_actions" for f in action_fields):
+            if "unique_actions" not in direct_fields:
+                direct_fields.append("unique_actions")
 
     api_fields = direct_fields
 
