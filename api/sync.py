@@ -465,12 +465,16 @@ def fetch_dv360(token, accounts, tbl, date_start, date_end):
             print(f"[DV360] Buscando (partner level) | {date_start} → {date_end}")
         ds=date_start.split("-"); de=date_end.split("-")
         report_type = "REACH" if REACH_METRICS else "STANDARD"
-        # Para Unique Reach, usa LAST_7_DAYS (CUSTOM_DATES pode não funcionar)
+        # Para Unique Reach usa REACH type com CUSTOM_DATES
         if REACH_METRICS and not use_advertiser_filter:
             body = {
                 "metadata":{
                     "title": f"inflr_{int(_t.time())}",
-                    "dataRange": {"range": "LAST_7_DAYS"}
+                    "dataRange":{
+                        "range":"CUSTOM_DATES",
+                        "customStartDate":{"year":int(ds_use[0]),"month":int(ds_use[1]),"day":int(ds_use[2])},
+                        "customEndDate":{"year":int(de_use[0]),"month":int(de_use[1]),"day":int(de_use[2])}
+                    }
                 },
                 "params":{
                     "type": report_type,
