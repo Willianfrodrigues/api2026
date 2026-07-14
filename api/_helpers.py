@@ -42,9 +42,16 @@ def ensure_schema(conn):
         dimensions   JSONB NOT NULL DEFAULT '[]',
         metrics      JSONB NOT NULL DEFAULT '[]',
         breakdown    TEXT NOT NULL DEFAULT 'campaign',
+        aliases      JSONB NOT NULL DEFAULT '{}',
         created_at   TIMESTAMPTZ DEFAULT NOW(),
         updated_at   TIMESTAMPTZ DEFAULT NOW()
     );
+    -- Adiciona aliases se não existir (migrações seguras)
+    DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pipe_tables' AND column_name='aliases') THEN
+            ALTER TABLE pipe_tables ADD COLUMN aliases JSONB NOT NULL DEFAULT '{}';
+        END IF;
+    END $$;
     CREATE TABLE IF NOT EXISTS pipe_transfers (
         id              SERIAL PRIMARY KEY,
         name            TEXT NOT NULL,
@@ -202,18 +209,20 @@ def delete_table_group(group_id):
 def save_table(data):
     conn = get_db(); ensure_schema(conn)
     cur = conn.cursor()
+    aliases = json.dumps(data.get("aliases") or {})
     if data.get("id"):
         cur.execute("""UPDATE pipe_tables SET name=%s,bq_table=%s,dimensions=%s,metrics=%s,
-                       breakdown=%s,updated_at=NOW() WHERE id=%s""",
+                       breakdown=%s,aliases=%s,updated_at=NOW() WHERE id=%s""",
                     (data["name"], data["bq_table"], json.dumps(data.get("dimensions",[])),
-                     json.dumps(data.get("metrics",[])), data.get("breakdown","campaign"), data["id"]))
+                     json.dumps(data.get("metrics",[])), data.get("breakdown","campaign"),
+                     aliases, data["id"]))
         new_id = data["id"]
     else:
-        cur.execute("""INSERT INTO pipe_tables (group_id,name,bq_table,dimensions,metrics,breakdown)
-                       VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
+        cur.execute("""INSERT INTO pipe_tables (group_id,name,bq_table,dimensions,metrics,breakdown,aliases)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                     (data["group_id"], data["name"], data["bq_table"],
                      json.dumps(data.get("dimensions",[])), json.dumps(data.get("metrics",[])),
-                     data.get("breakdown","campaign")))
+                     data.get("breakdown","campaign"), aliases))
         new_id = cur.fetchone()[0]
     conn.commit(); cur.close(); conn.close()
     return new_id
@@ -221,9 +230,9 @@ def save_table(data):
 def list_tables(group_id):
     conn = get_db(); ensure_schema(conn)
     cur = conn.cursor()
-    cur.execute("SELECT id,name,bq_table,dimensions,metrics,breakdown FROM pipe_tables WHERE group_id=%s ORDER BY id", (group_id,))
+    cur.execute("SELECT id,name,bq_table,dimensions,metrics,breakdown,aliases FROM pipe_tables WHERE group_id=%s ORDER BY id", (group_id,))
     rows = cur.fetchall(); cur.close(); conn.close()
-    return [{"id":r[0],"name":r[1],"bq_table":r[2],"dimensions":r[3] or [],"metrics":r[4] or [],"breakdown":r[5]} for r in rows]
+    return [{"id":r[0],"name":r[1],"bq_table":r[2],"dimensions":r[3] or [],"metrics":r[4] or [],"breakdown":r[5],"aliases":r[6] or {}} for r in rows]
 
 def delete_table(table_id):
     conn = get_db()
@@ -367,8 +376,6 @@ def ensure_bq_dataset(bq, project, dataset):
         ds.location = "US"
         bq.create_dataset(ds, exists_ok=True)
 
-import re as _re
-
 def _sanitize_col(name):
     """Sanitiza nome de coluna para BigQuery: remove parênteses, caracteres inválidos e underscores múltiplos."""
     clean = _re.sub(r'\s*\([^)]*\)', '', str(name))  # remove (conteúdo)
@@ -376,18 +383,21 @@ def _sanitize_col(name):
     clean = _re.sub(r'_+', '_', clean).strip('_').lower()
     return clean or 'col'
 
-def upsert_bq(bq, project, dataset, table_name, rows):
+def upsert_bq(bq, project, dataset, table_name, rows, aliases=None):
     from google.cloud import bigquery
     if not rows: return 0
+    aliases = aliases or {}
 
-    # Sanitiza nomes de colunas e limpa valores
+    # Sanitiza nomes de colunas, aplica aliases e limpa valores
     clean_rows = []
     for r in rows:
         clean = {}
         for k, v in r.items():
             if k == "_synced_at":
                 continue
-            col = _sanitize_col(k)
+            # Aplica alias customizado ou sanitiza o nome padrão
+            col = aliases.get(k) or _sanitize_col(k)
+            col = _sanitize_col(col)  # garante que alias também é válido
             if isinstance(v, float) and v == int(v):
                 clean[col] = int(v)
             else:
